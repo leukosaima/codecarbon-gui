@@ -11,6 +11,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write      # build provenance attestations (Sigstore)
+  attestations: write
 
 env:
   PYTHON_VERSION: "3.12"
@@ -100,3 +102,38 @@ jobs:
           prerelease: true
           includeUpdaterJson: false
           args: --target ${{ matrix.target }} ${{ matrix.args }}
+
+      # Signed statement that these exact files were built by this workflow
+      # from this commit. Verify with: gh attestation verify <file> -R mlco2/codecarbon-gui
+      - name: Collect bundles
+        shell: bash
+        run: |
+          mkdir -p out
+          find src-tauri/target -path '*/release/bundle/*' -type f \
+            \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.dmg' \
+               -o -name '*.exe' -o -name '*.msi' \) -exec cp {} out/ \;
+          ls -la out
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: out/*
+
+  checksums:
+    name: SHA256SUMS
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve the tag of a manual run
+        if: env.TAG == ''
+        run: echo "TAG=v$(python3 -c "import json;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")" >> "$GITHUB_ENV"
+      - name: Download the release assets and publish their checksums
+        run: |
+          mkdir assets && cd assets
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" --pattern '*' --skip-existing
+          rm -f SHA256SUMS.txt
+          sha256sum * | tee SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt -R "$GITHUB_REPOSITORY" --clobber

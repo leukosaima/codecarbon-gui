@@ -63,6 +63,20 @@ your distribution's *Extensions* app or
 and the icon will appear in the top bar. KDE, XFCE, Cinnamon and MATE show
 tray icons out of the box.
 
+## Checking that your download is genuine (optional)
+
+Because the installers are not code-signed yet, each release also publishes
+`SHA256SUMS.txt` and a build-provenance attestation made by GitHub when the
+files were built from the tagged source. If you are the careful type:
+
+```bash
+sha256sum -c SHA256SUMS.txt --ignore-missing            # macOS: shasum -a 256 -c
+gh attestation verify CodeCarbon_0.1.0_aarch64.dmg -R mlco2/codecarbon-gui
+```
+
+See [SECURITY.md](../SECURITY.md) for what the app does and does not do on
+your computer.
+
 ## What do the numbers mean?
 
 * **Power (W)** — how much electricity your machine is drawing right now,
