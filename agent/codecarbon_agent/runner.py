@@ -112,6 +112,7 @@ class Runner:
         prewarm: bool = False,
         stop_timeout_secs: float = 30.0,
         signal_grace_secs: float = 10.0,
+        eof_grace_secs: float = 20.0,
     ) -> None:
         self._stdin = stdin
         self._writer = writer
@@ -124,6 +125,7 @@ class Runner:
         self._prewarm = prewarm
         self._stop_timeout = stop_timeout_secs
         self._signal_grace = signal_grace_secs
+        self._eof_grace = eof_grace_secs
         self._session_lock = threading.Lock()
         self._lines: queue.Queue[str | None] = queue.Queue()
         self._terminate = threading.Event()
@@ -208,7 +210,10 @@ class Runner:
         watchdog.start()
 
     def _force_exit(self) -> None:
-        print("codecarbon-agent: did not stop in time after a signal, exiting", file=sys.stderr)
+        print(
+            "codecarbon-agent: did not stop in time after a signal or EOF, exiting",
+            file=sys.stderr,
+        )
         with contextlib.suppress(Exception):
             sys.stderr.flush()
         os._exit(1)
@@ -232,6 +237,14 @@ class Runner:
             print(f"codecarbon-agent: stdin read failed: {exc!r}", file=sys.stderr)
         finally:
             self._lines.put(None)
+            # EOF means the app is gone (quit or crashed). The main loop
+            # normally notices within 0.1 s, but if it is stuck inside
+            # CodeCarbon (e.g. a hanging ``start``) we must not become an
+            # orphan at 100 % CPU: force the exit after a grace period.
+            if self._eof_grace > 0:
+                watchdog = threading.Timer(self._eof_grace, self._force_exit)
+                watchdog.daemon = True
+                watchdog.start()
 
     def _serve(self) -> None:
         while not self._terminate.is_set() and not self._writer.broken:

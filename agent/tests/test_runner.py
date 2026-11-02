@@ -217,3 +217,19 @@ def test_format_record_with_exception():
         "codecarbon", logging.WARNING, __file__, 1, "  line one \n\n  line two ", (), None
     )
     assert format_record(record) == "line one\nline two"
+
+
+def test_eof_watchdog_forces_exit_when_the_loop_is_stuck(monkeypatch):
+    """If the app disappears while the main loop is stuck inside CodeCarbon,
+    the reader thread's EOF watchdog must force the exit (no orphan)."""
+    import io
+    import threading
+
+    from codecarbon_agent.protocol import Writer
+    from codecarbon_agent.runner import Runner
+
+    forced = threading.Event()
+    runner = Runner(io.StringIO(""), Writer(io.StringIO()), eof_grace_secs=0.05)
+    monkeypatch.setattr(runner, "_force_exit", forced.set)
+    runner._read_stdin()  # hits EOF at once; the main loop is "stuck" (never drains)
+    assert forced.wait(2.0), "the EOF watchdog did not fire"
