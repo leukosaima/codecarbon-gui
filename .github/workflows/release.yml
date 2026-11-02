@@ -1,8 +1,8 @@
 name: Release
 
 # Builds the installers for every platform and attaches them to a GitHub
-# Release. Triggered by pushing a tag `vX.Y.Z` (or manually, which produces a
-# draft release named after the version in src-tauri/tauri.conf.json).
+# pre-release. Triggered by pushing a tag `vX.Y.Z` (or manually, which uses
+# the version in src-tauri/tauri.conf.json as the tag).
 
 on:
   push:
@@ -87,8 +87,16 @@ jobs:
         with:
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v__VERSION__' }}
           releaseName: "CodeCarbon Desktop ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v__VERSION__' }}"
-          releaseBody: "See docs/INSTALL.md for installation instructions."
-          releaseDraft: true
-          prerelease: false
+          releaseBody: |
+            Pre-release build of CodeCarbon Desktop.
+
+            **macOS Apple Silicon**: download `CodeCarbon_<version>_aarch64.dmg`, drag the app to Applications. The app is not signed yet: on first launch open *System Settings → Privacy & Security* and click **Open Anyway** (macOS 15+), or right-click the app → *Open* (macOS 14 and older).
+            **macOS Intel**: `CodeCarbon_<version>_x64.dmg`, same steps.
+            **Windows**: `CodeCarbon_<version>_x64-setup.exe` (SmartScreen: *More info → Run anyway*).
+            **Linux**: `.AppImage`, `.deb` or `.rpm`.
+
+            Full instructions: https://github.com/mlco2/codecarbon-gui/blob/main/docs/INSTALL.md
+          releaseDraft: false
+          prerelease: true
           includeUpdaterJson: false
           args: --target ${{ matrix.target }} ${{ matrix.args }}
