@@ -103,6 +103,15 @@ jobs:
           includeUpdaterJson: false
           args: --target ${{ matrix.target }} ${{ matrix.args }}
 
+      - name: Verify the macOS bundle is signed (ad-hoc) and sealed
+        if: runner.os == 'macOS'
+        run: |
+          app=$(find src-tauri/target -path '*/release/bundle/macos/*.app' -maxdepth 6 -type d | head -1)
+          echo "bundle: $app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -E 'Identifier|Signature|TeamIdentifier|flags'
+          codesign --verify --verbose=2 "$app/Contents/MacOS/codecarbon-agent"
+          plutil -extract LSUIElement raw "$app/Contents/Info.plist"
       # Signed statement that these exact files were built by this workflow
       # from this commit. Verify with: gh attestation verify <file> -R mlco2/codecarbon-gui
       - name: Collect bundles

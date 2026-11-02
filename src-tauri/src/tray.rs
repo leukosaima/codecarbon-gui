@@ -15,9 +15,16 @@ use crate::state::{Phase, TrackerState};
 
 const TRAY_ID: &str = "codecarbon";
 
-/// Grey outlined leaf (monochrome + alpha).
+// Grey outlined leaf (idle) / filled leaf (active), monochrome + alpha.
+// Windows shows tray icons at 16–24 px and scales badly from 88 px, so it
+// gets the 44 px assets; macOS and Linux get the @2x ones.
+#[cfg(windows)]
+const ICON_IDLE: &[u8] = include_bytes!("../icons/tray/tray-idle.png");
+#[cfg(windows)]
+const ICON_ACTIVE: &[u8] = include_bytes!("../icons/tray/tray-active.png");
+#[cfg(not(windows))]
 const ICON_IDLE: &[u8] = include_bytes!("../icons/tray/tray-idle@2x.png");
-/// Filled green leaf (monochrome + alpha).
+#[cfg(not(windows))]
 const ICON_ACTIVE: &[u8] = include_bytes!("../icons/tray/tray-active@2x.png");
 
 // Menu item ids.
@@ -156,9 +163,12 @@ impl Tray {
         // Icon.
         if measuring != self.shows_active_icon {
             let bytes = if measuring { ICON_ACTIVE } else { ICON_IDLE };
-            self.icon.set_icon(Some(Image::from_bytes(bytes)?))?;
-            #[cfg(target_os = "macos")]
-            self.icon.set_icon_as_template(true)?;
+            // On macOS the icon is a template (drawn in the menu-bar colour);
+            // `set_icon_with_as_template` keeps it so in one main-thread call.
+            self.icon.set_icon_with_as_template(
+                Some(Image::from_bytes(bytes)?),
+                cfg!(target_os = "macos"),
+            )?;
             self.shows_active_icon = measuring;
         }
 
