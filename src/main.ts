@@ -3,7 +3,16 @@
  * `TrackerState` pushed by Rust on `tracker://state`.
  */
 import "./styles.css";
-import { getState, onNavigate, onState, type TrackerState, type View } from "./api";
+import {
+  getSettings,
+  getState,
+  onNavigate,
+  onSettings,
+  onState,
+  type Settings,
+  type TrackerState,
+  type View,
+} from "./api";
 import { h } from "./dom";
 import { AboutView } from "./views/about";
 import { DashboardView } from "./views/dashboard";
@@ -44,7 +53,13 @@ function select(view: View): void {
 
 function render(state: TrackerState): void {
   dashboard.update(state);
+  settings.update(state);
   about.update(state);
+}
+
+function applySettings(s: Settings): void {
+  dashboard.setSettings(s);
+  settings.applySettings(s);
 }
 
 select("dashboard");
@@ -52,6 +67,10 @@ select("dashboard");
 // Subscribe first, then fetch the current state, so no update is missed.
 void onState(render);
 void onNavigate(select);
+void onSettings(applySettings);
 getState()
   .then(render)
   .catch((e: unknown) => console.error("get_state failed", e));
+getSettings()
+  .then(applySettings)
+  .catch((e: unknown) => console.error("get_settings failed", e));

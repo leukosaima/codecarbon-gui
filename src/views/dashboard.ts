@@ -8,8 +8,10 @@ import {
   restartAgent,
   startTracking,
   stopTracking,
+  type Settings,
   type TrackerState,
 } from "../api";
+import { uploadChip } from "../account";
 import { h, setText, show, spinner, svg } from "../dom";
 import * as fmt from "../format";
 import { cpuMethod, statusLine } from "../format";
@@ -53,6 +55,7 @@ export class DashboardView {
   private readonly chartArea = svg("path", { class: "spark-area" });
   private readonly chartMax = h("span", { class: "muted" });
   private readonly status = h("p", { class: "status-line" });
+  private readonly uploadChip = h("p", { class: "upload-chip" });
   private readonly summary: HTMLElement;
   private readonly summaryRows = h("dl", { class: "summary-grid" });
   private readonly details = h("details", { class: "card details" });
@@ -111,11 +114,13 @@ export class DashboardView {
       ),
       this.chartCard,
       this.status,
+      this.uploadChip,
       this.details,
     );
 
     // Tick the duration tile between two measurements.
     window.setInterval(() => this.renderDuration(), 1000);
+    show(this.uploadChip, false);
   }
 
   private async run(action: () => Promise<void>): Promise<void> {
@@ -135,6 +140,21 @@ export class DashboardView {
   private onButton(): void {
     const phase = this.state?.phase;
     void this.run(phase === "running" ? stopTracking : startTracking);
+  }
+
+  /** Saved settings (at load and after every save): the upload chip. */
+  setSettings(settings: Settings): void {
+    const target = uploadChip(settings.api);
+    this.uploadChip.replaceChildren();
+    if (target) {
+      this.uploadChip.append(
+        h("span", { "aria-hidden": "true" }, "☁"),
+        " Uploading to ",
+        h("b", {}, target),
+      );
+      this.uploadChip.title = "Your measurements are sent to the CodeCarbon dashboard.";
+    }
+    show(this.uploadChip, target !== null);
   }
 
   update(state: TrackerState): void {

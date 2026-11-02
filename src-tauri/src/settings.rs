@@ -13,7 +13,11 @@ use crate::protocol::AgentConfig;
 /// File name inside the app config directory.
 pub const SETTINGS_FILE: &str = "settings.json";
 
-/// Settings of the (experimental) CodeCarbon API upload.
+/// Default CodeCarbon API endpoint.
+pub const DEFAULT_API_ENDPOINT: &str = "https://api.codecarbon.io";
+
+/// Upload to the CodeCarbon dashboard (API). Filled in by the dashboard
+/// sign-in (Settings view), or by hand under "Advanced".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ApiSettings {
@@ -21,16 +25,34 @@ pub struct ApiSettings {
     pub endpoint: String,
     pub api_key: String,
     pub experiment_id: String,
+    /// Display only: where the uploads go ("org / project / experiment").
+    pub organization_name: String,
+    pub project_name: String,
+    pub experiment_name: String,
 }
 
 impl Default for ApiSettings {
     fn default() -> Self {
         Self {
             enabled: false,
-            endpoint: "https://api.codecarbon.io".to_string(),
+            endpoint: DEFAULT_API_ENDPOINT.to_string(),
             api_key: String::new(),
             experiment_id: String::new(),
+            organization_name: String::new(),
+            project_name: String::new(),
+            experiment_name: String::new(),
         }
+    }
+}
+
+impl ApiSettings {
+    /// After signing out: no key, no experiment, upload off (the endpoint
+    /// is kept).
+    pub fn clear_account(&mut self) {
+        *self = ApiSettings {
+            endpoint: std::mem::take(&mut self.endpoint),
+            ..Default::default()
+        };
     }
 }
 
@@ -143,6 +165,9 @@ impl Settings {
         self.api.endpoint = self.api.endpoint.trim().to_string();
         self.api.api_key = self.api.api_key.trim().to_string();
         self.api.experiment_id = self.api.experiment_id.trim().to_string();
+        self.api.organization_name = self.api.organization_name.trim().to_string();
+        self.api.project_name = self.api.project_name.trim().to_string();
+        self.api.experiment_name = self.api.experiment_name.trim().to_string();
         self
     }
 
@@ -212,6 +237,64 @@ mod tests {
         assert!(s.save_csv);
         assert!(s.api.enabled);
         assert_eq!(s.api.endpoint, "https://api.codecarbon.io");
+        assert_eq!(s.api.project_name, "", "files from before v2 have no names");
+    }
+
+    #[test]
+    fn api_names_round_trip_and_clear() {
+        let dir = temp_dir("api-names");
+        let path = settings_path(&dir);
+        let mut s = Settings {
+            api: ApiSettings {
+                enabled: true,
+                endpoint: "https://staging.example.org".into(),
+                api_key: "k".into(),
+                experiment_id: "e1".into(),
+                organization_name: " Org ".into(),
+                project_name: "Proj".into(),
+                experiment_name: "Exp".into(),
+            },
+            ..Default::default()
+        }
+        .normalized();
+        assert_eq!(s.api.organization_name, "Org");
+        assert!(s.validate().is_ok());
+        s.save(&path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("\"experiment_name\": \"Exp\""));
+        assert_eq!(Settings::load(&path), s);
+
+        s.api.clear_account();
+        assert_eq!(
+            s.api,
+            ApiSettings {
+                endpoint: "https://staging.example.org".into(),
+                ..Default::default()
+            }
+        );
+        assert!(s.validate().is_ok());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn names_are_not_sent_to_the_agent() {
+        let s = Settings {
+            api: ApiSettings {
+                enabled: true,
+                api_key: "k".into(),
+                experiment_id: "e1".into(),
+                project_name: "Proj".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let c = s.to_agent_config(Path::new("/data"));
+        assert!(c.save_to_api);
+        assert_eq!(c.api_key.as_deref(), Some("k"));
+        assert_eq!(c.experiment_id.as_deref(), Some("e1"));
+        assert_eq!(c.api_endpoint.as_deref(), Some("https://api.codecarbon.io"));
+        let v = serde_json::to_value(&c).unwrap();
+        assert!(!v.to_string().contains("Proj"));
     }
 
     #[test]

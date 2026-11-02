@@ -44,7 +44,7 @@ offset, e.g. `2026-11-02T20:50:26+01:00`).
 
 ### `ready` — once, at start-up
 ```json
-{"event":"ready","ts":"…","protocol_version":1,"agent_version":"0.1.0",
+{"event":"ready","ts":"…","protocol_version":2,"agent_version":"0.1.0",
  "codecarbon_version":"3.3.2","python_version":"3.13.1","pid":4242,
  "platform":"Linux-6.8-x86_64"}
 ```
@@ -214,7 +214,12 @@ Details of the implemented behaviour:
   `logged_in: true` with the cached user and `api_*` commands reply
   `api_error`, so going offline does not sign the user out.
 * Catalog items also carry `description`; `api_created.item.parent_id` is
-  `null` for an organisation. Creating an organisation whose name already
+  the organisation id for a project, the project id for an experiment and
+  `null` for an organisation.
+* `error` events do not say which request they answer; the app treats any
+  `api_error` as the end of every pending account operation.
+* Agents older than v2 reject `--credentials` with exit code 2; the app then
+  restarts them without the flag and shows that a newer engine is needed. Creating an organisation whose name already
   exists returns the existing one (CodeCarbon library behaviour).
 * Invalid `api_create` fields or a missing `api_key.project_id` give
   `error(bad_command)`. `description` defaults to `""`.

@@ -9,7 +9,15 @@ const defaults = (): Settings => ({
   save_csv: true,
   start_tracking_on_launch: false,
   launch_at_login: false,
-  api: { enabled: false, endpoint: "https://api.codecarbon.io", api_key: "", experiment_id: "" },
+  api: {
+    enabled: false,
+    endpoint: "https://api.codecarbon.io",
+    api_key: "",
+    experiment_id: "",
+    organization_name: "",
+    project_name: "",
+    experiment_name: "",
+  },
   pue: null,
   force_carbon_intensity_g_per_kwh: null,
 });

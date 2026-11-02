@@ -2,8 +2,16 @@
  * Settings form bound to the Rust `Settings` struct. The Rust side validates
  * again and is authoritative; the checks here only give instant feedback.
  */
-import { errorMessage, getSettings, saveSettings, type Settings } from "../api";
+import {
+  errorMessage,
+  getSettings,
+  saveSettings,
+  type ApiSettings,
+  type Settings,
+  type TrackerState,
+} from "../api";
 import { h, show } from "../dom";
+import { AccountCard } from "./account";
 
 /** Inline validation of the fields a user types. Returns field → message. */
 export function validate(s: Settings): Map<string, string> {
@@ -118,7 +126,6 @@ export class SettingsView {
       "Carbon intensity override (g/kWh, optional)",
       { type: "number", min: 0, max: 2000, step: 1, placeholder: "From your country" },
     ),
-    "api.enabled": toggle("api.enabled", "Upload to the CodeCarbon API"),
     "api.endpoint": field("api.endpoint", "Endpoint", { type: "url", spellcheck: false }),
     "api.api_key": field("api.api_key", "API key", { type: "password", autocomplete: "off" }),
     "api.experiment_id": field("api.experiment_id", "Experiment id", {
@@ -129,12 +136,25 @@ export class SettingsView {
 
   private readonly saveButton = h("button", { class: "btn btn-primary", type: "submit" }, "Save");
   private readonly message = h("p", { class: "form-message", role: "status" });
+  private readonly account = new AccountCard((enabled) => this.saveUploadEnabled(enabled));
 
   constructor() {
     const f = this.fields;
+    this.account.advanced.append(
+      h(
+        "p",
+        { class: "muted" },
+        "Or paste an API key and an experiment id from the dashboard yourself " +
+          "(saved with the Save button).",
+      ),
+      f["api.endpoint"].row,
+      f["api.api_key"].row,
+      f["api.experiment_id"].row,
+    );
     const form = h(
       "form",
       { class: "settings-form", novalidate: true },
+      this.account.root,
       h(
         "fieldset",
         { class: "card" },
@@ -157,25 +177,6 @@ export class SettingsView {
         h("summary", {}, "Advanced"),
         h("div", { class: "details-body" }, f.pue.row, f.force_carbon_intensity_g_per_kwh.row),
       ),
-      h(
-        "details",
-        { class: "card details" },
-        h("summary", {}, "CodeCarbon API ", h("span", { class: "badge" }, "experimental")),
-        h(
-          "div",
-          { class: "details-body" },
-          h(
-            "p",
-            { class: "muted" },
-            "Upload your sessions to the CodeCarbon dashboard. A proper login is coming; " +
-              "for now paste an API key and an experiment id.",
-          ),
-          f["api.enabled"].row,
-          f["api.endpoint"].row,
-          f["api.api_key"].row,
-          f["api.experiment_id"].row,
-        ),
-      ),
       h("div", { class: "form-actions" }, this.message, this.saveButton),
     );
     form.addEventListener("submit", (e) => {
@@ -189,11 +190,41 @@ export class SettingsView {
     this.root = h("section", { class: "view settings" }, form);
   }
 
+  /** Every `TrackerState` push (the account card renders from it). */
+  update(state: TrackerState): void {
+    this.account.update(state);
+  }
+
+  /**
+   * New settings saved elsewhere (sign-in flow, sign out, upload toggle).
+   * Only the API part of the form is refreshed, so unsaved edits of the
+   * other fields survive.
+   */
+  applySettings(s: Settings): void {
+    if (this.loaded) this.loaded = { ...this.loaded, api: s.api };
+    else this.loaded = s;
+    this.writeApi(s.api);
+    this.account.setSettings(this.loaded);
+  }
+
+  /** The card's "Upload my sessions" switch: saved at once. */
+  private async saveUploadEnabled(enabled: boolean): Promise<void> {
+    const base = this.loaded ?? (await getSettings());
+    const next: Settings = { ...base, api: { ...base.api, enabled } };
+    const errors = validate(next);
+    if (errors.size > 0) {
+      throw new Error([...errors.values()][0] ?? "Invalid settings.");
+    }
+    // `settings://changed` then calls applySettings.
+    this.applySettings(await saveSettings(next));
+  }
+
   /** Reload from disk every time the view is shown. */
   async load(): Promise<void> {
     try {
       this.loaded = await getSettings();
       this.write(this.loaded);
+      this.account.setSettings(this.loaded);
       this.showErrors(new Map());
       this.message.textContent = "";
     } catch (e) {
@@ -212,14 +243,22 @@ export class SettingsView {
     f.pue.input.value = s.pue == null ? "" : String(s.pue);
     f.force_carbon_intensity_g_per_kwh.input.value =
       s.force_carbon_intensity_g_per_kwh == null ? "" : String(s.force_carbon_intensity_g_per_kwh);
-    f["api.enabled"].input.checked = s.api.enabled;
-    f["api.endpoint"].input.value = s.api.endpoint;
-    f["api.api_key"].input.value = s.api.api_key;
-    f["api.experiment_id"].input.value = s.api.experiment_id;
+    this.writeApi(s.api);
+  }
+
+  private writeApi(api: ApiSettings): void {
+    const f = this.fields;
+    f["api.endpoint"].input.value = api.endpoint;
+    f["api.api_key"].input.value = api.api_key;
+    f["api.experiment_id"].input.value = api.experiment_id;
   }
 
   private read(): Settings {
     const f = this.fields;
+    const saved = this.loaded?.api;
+    const experimentId = f["api.experiment_id"].input.value.trim();
+    // Names describe the saved experiment; a hand-typed id makes them stale.
+    const keepNames = saved !== undefined && saved.experiment_id === experimentId;
     return {
       interval_secs: Number(f.interval_secs.input.value),
       country_iso_code: optionalText(f.country_iso_code.input)?.toUpperCase() ?? null,
@@ -228,10 +267,13 @@ export class SettingsView {
       start_tracking_on_launch: f.start_tracking_on_launch.input.checked,
       launch_at_login: f.launch_at_login.input.checked,
       api: {
-        enabled: f["api.enabled"].input.checked,
+        enabled: saved?.enabled ?? false,
         endpoint: f["api.endpoint"].input.value.trim(),
         api_key: f["api.api_key"].input.value.trim(),
-        experiment_id: f["api.experiment_id"].input.value.trim(),
+        experiment_id: experimentId,
+        organization_name: keepNames ? saved.organization_name : "",
+        project_name: keepNames ? saved.project_name : "",
+        experiment_name: keepNames ? saved.experiment_name : "",
       },
       pue: optionalNumber(f.pue.input),
       force_carbon_intensity_g_per_kwh: optionalNumber(f.force_carbon_intensity_g_per_kwh.input),
@@ -246,6 +288,11 @@ export class SettingsView {
       f.input.setAttribute("aria-invalid", String(message !== ""));
     }
     this.saveButton.disabled = errors.size > 0;
+    // The manual API fields live in the card's collapsed "Advanced" block.
+    if ([...errors.keys()].some((k) => k.startsWith("api."))) {
+      const details = this.account.advanced.closest("details");
+      if (details) details.open = true;
+    }
   }
 
   private setMessage(text: string, isError: boolean): void {
@@ -263,6 +310,7 @@ export class SettingsView {
     try {
       this.loaded = await saveSettings(settings);
       this.write(this.loaded);
+      this.account.setSettings(this.loaded);
       this.setMessage("Saved. Measurement changes apply to the next start.", false);
     } catch (e) {
       this.setMessage(errorMessage(e), true);
