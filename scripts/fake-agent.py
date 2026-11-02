@@ -6,6 +6,11 @@ measure anything: it invents plausible, slowly drifting power figures. Use it
 when you work on the Tauri app and do not want to build the real PyInstaller
 sidecar (see scripts/use-fake-agent.sh).
 
+Protocol v2 (dashboard account) is faked too: ``auth_start`` "logs in" after
+2 s (``FAKE_AGENT_AUTH_DELAY``) as Ada Lovelace (or fails, with
+``FAKE_AGENT_AUTH_FAIL=1``), the signed-in state is kept
+in the ``--credentials`` file, and ``api_*`` work on a small in-memory catalog.
+
 Only the standard library is used, so any Python 3.8+ works.
 """
 
@@ -22,7 +27,7 @@ import time
 import uuid
 from datetime import datetime
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 AGENT_VERSION = "0.0.0-fake"
 CARBON_INTENSITY = 56.0  # g/kWh, roughly France
 
@@ -166,10 +171,202 @@ class FakeTracker:
             emit("measurement", **m)
 
 
+FAKE_AUTH_URL = "https://authentication.codecarbon.io/fake"
+FAKE_USER = {"name": "Ada Lovelace", "email": "ada@example.org"}
+FAKE_API_ENDPOINT = "https://api.codecarbon.io"
+
+
+def fake_catalog() -> dict:
+    return {
+        "organizations": [
+            {
+                "id": "org-1",
+                "name": "Analytical Engines",
+                "projects": [
+                    {
+                        "id": "proj-1",
+                        "name": "Notes on the Engine",
+                        "experiments": [
+                            {"id": "exp-1", "name": "Laptop"},
+                            {"id": "exp-2", "name": "Workstation"},
+                        ],
+                    },
+                    {"id": "proj-2", "name": "Bernoulli numbers", "experiments": []},
+                ],
+            },
+            {"id": "org-2", "name": "Personal", "projects": []},
+        ]
+    }
+
+
+class FakeAccount:
+    """The dashboard login and API, faked. Replies are emitted from here."""
+
+    def __init__(self, credentials: str | None) -> None:
+        self.credentials = credentials
+        self.catalog = fake_catalog()
+        self.delay = float(os.environ.get("FAKE_AGENT_AUTH_DELAY", "2"))
+        self._pending: threading.Event | None = None
+        self._lock = threading.Lock()
+
+    # -- credentials file -----------------------------------------------------
+    def logged_in(self) -> bool:
+        return bool(self.credentials) and os.path.exists(self.credentials)
+
+    def _save(self) -> None:
+        assert self.credentials
+        folder = os.path.dirname(self.credentials)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+        fd = os.open(self.credentials, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump({"fake": True, "user": FAKE_USER}, f)
+
+    # -- commands -------------------------------------------------------------
+    def handle(self, cmd: str, msg: dict) -> bool:
+        """Handle an ``auth_*`` / ``api_*`` command; False if it is not one."""
+        if not (cmd.startswith("auth_") or cmd.startswith("api_")):
+            return False
+        if self.credentials is None:
+            emit("error", code="auth_unavailable", message="No --credentials path given.")
+            return True
+        handler = getattr(self, "cmd_" + cmd, None)
+        if handler is None:
+            emit("error", code="bad_command", message=f"unknown command: {cmd}")
+        else:
+            handler(msg)
+        return True
+
+    def cmd_auth_start(self, _msg: dict) -> None:
+        self._cancel_pending()
+        cancel = threading.Event()
+        with self._lock:
+            self._pending = cancel
+        emit("auth_url", url=FAKE_AUTH_URL)
+
+        def finish() -> None:
+            if cancel.wait(self.delay):
+                return
+            with self._lock:
+                if self._pending is not cancel:
+                    return
+                self._pending = None
+            if os.environ.get("FAKE_AGENT_AUTH_FAIL"):
+                emit(
+                    "auth_result",
+                    ok=False,
+                    cancelled=False,
+                    message="Authorization failed: access_denied",
+                )
+                return
+            self._save()
+            emit("auth_result", ok=True, user=FAKE_USER)
+
+        threading.Thread(target=finish, daemon=True).start()
+
+    def _cancel_pending(self) -> bool:
+        with self._lock:
+            pending, self._pending = self._pending, None
+        if pending is None:
+            return False
+        pending.set()
+        emit("auth_result", ok=False, cancelled=True, message="Sign-in cancelled.")
+        return True
+
+    def cmd_auth_cancel(self, _msg: dict) -> None:
+        self._cancel_pending()
+
+    def _status(self) -> None:
+        if self.logged_in():
+            emit("auth_status", logged_in=True, user=FAKE_USER, api_endpoint=FAKE_API_ENDPOINT)
+        else:
+            emit("auth_status", logged_in=False, user=None, api_endpoint=FAKE_API_ENDPOINT)
+
+    def cmd_auth_status(self, _msg: dict) -> None:
+        self._status()
+
+    def cmd_auth_logout(self, _msg: dict) -> None:
+        assert self.credentials
+        try:
+            os.remove(self.credentials)
+        except FileNotFoundError:
+            pass
+        self._status()
+
+    def _require_login(self) -> bool:
+        if self.logged_in():
+            return True
+        emit("error", code="not_logged_in", message="Please sign in to the CodeCarbon dashboard.")
+        return False
+
+    def cmd_api_catalog(self, _msg: dict) -> None:
+        if self._require_login():
+            emit("api_catalog", **self.catalog)
+
+    def cmd_api_create(self, msg: dict) -> None:
+        if not self._require_login():
+            return
+        kind, name, parent = msg.get("kind"), str(msg.get("name") or "").strip(), msg.get("parent_id")
+        if not name:
+            emit("error", code="bad_command", message="api_create needs a name")
+            return
+        item = {"id": f"{kind}-{uuid.uuid4().hex[:8]}", "name": name}
+        orgs = self.catalog["organizations"]
+        if kind == "organization":
+            orgs.append({**item, "projects": []})
+        elif kind == "project":
+            org = next((o for o in orgs if o["id"] == parent), None)
+            if org is None:
+                emit("error", code="api_error", message=f"organization {parent} not found")
+                return
+            org["projects"].append({**item, "experiments": []})
+            item["parent_id"] = parent
+        elif kind == "experiment":
+            project = next(
+                (p for o in orgs for p in o["projects"] if p["id"] == parent), None
+            )
+            if project is None:
+                emit("error", code="api_error", message=f"project {parent} not found")
+                return
+            project["experiments"].append(dict(item))
+            item["parent_id"] = parent
+        else:
+            emit("error", code="bad_command", message=f"invalid kind: {kind}")
+            return
+        emit("api_created", kind=kind, item=item)
+
+    def cmd_api_key(self, msg: dict) -> None:
+        if self._require_login():
+            emit("api_key", project_id=msg.get("project_id"), api_key="fake-key")
+
+
+def parse_args(argv: list) -> tuple:
+    """Returns (version?, credentials path or None); exits 2 on bad usage."""
+    credentials = None
+    version = False
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--version":
+            version = True
+        elif arg == "--credentials" and i + 1 < len(argv):
+            i += 1
+            credentials = argv[i]
+        elif arg.startswith("--credentials="):
+            credentials = arg.split("=", 1)[1]
+        else:
+            sys.stderr.write(f"fake-agent: unknown argument {arg}\n")
+            sys.exit(2)
+        i += 1
+    return version, credentials
+
+
 def main() -> int:
-    if "--version" in sys.argv[1:]:
+    version, credentials = parse_args(sys.argv[1:])
+    if version:
         print(f"codecarbon-agent {AGENT_VERSION} (codecarbon fake)")
         return 0
+    account = FakeAccount(credentials)
 
     log(f"starting, pid {os.getpid()}")
     emit(
@@ -195,6 +392,8 @@ def main() -> int:
             continue
         log(f"command: {cmd}")
 
+        if account.handle(cmd, msg):
+            continue
         if cmd == "start":
             if tracker is not None:
                 emit("error", code="already_running", message="A measurement is already running.")

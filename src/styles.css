@@ -438,7 +438,9 @@ legend.card-title + * {
   font-weight: 500;
 }
 
-.field input:not([type="checkbox"]) {
+.field input:not([type="checkbox"]),
+.field select,
+.account-create input {
   font: inherit;
   color: var(--text);
   background: var(--bg);
@@ -449,6 +451,8 @@ legend.card-title + * {
 }
 
 .field input:focus-visible,
+.field select:focus-visible,
+.account-create input:focus-visible,
 .btn:focus-visible,
 .tab:focus-visible,
 .link:focus-visible {
@@ -547,6 +551,132 @@ input[type="checkbox"][role="switch"]:checked::after {
 
 .form-message:empty {
   display: none;
+}
+
+/* ---- CodeCarbon dashboard account -------------------------------------- */
+
+.field select {
+  min-width: 0;
+  appearance: auto;
+}
+
+.field select:disabled,
+.account-create input:disabled {
+  opacity: 0.6;
+}
+
+.account {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+.account .card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.account-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.account-block p {
+  margin: 0;
+}
+
+.account-cta {
+  width: 100%;
+}
+
+.account-site {
+  text-align: center;
+}
+
+.account .account-hint {
+  justify-content: flex-start;
+  margin: 0;
+}
+
+.account-user,
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  min-width: 0;
+}
+
+.account-user b {
+  overflow-wrap: anywhere;
+}
+
+.account-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 1.4em;
+}
+
+.account-status .spinner {
+  width: 12px;
+  height: 12px;
+}
+
+.account-create {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: -4px;
+}
+
+.account-create input {
+  flex: 1;
+  min-width: 0;
+}
+
+.account-target b {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.account-error {
+  margin: 0;
+}
+
+.account-advanced {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.account-advanced .details-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.link:disabled {
+  color: var(--muted);
+  cursor: default;
+  text-decoration: none;
+}
+
+.upload-chip {
+  align-self: center;
+  margin: -4px 0 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---- About -------------------------------------------------------------- */

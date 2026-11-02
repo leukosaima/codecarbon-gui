@@ -14,13 +14,16 @@ use tauri::{async_runtime, AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::agent::{AgentHandle, AgentSignal};
-use crate::protocol::{AgentCommand, AgentEvent};
-use crate::settings::Settings;
-use crate::state::{Phase, TrackerState};
+use crate::protocol::{AgentCommand, AgentEvent, ApiKind};
+use crate::settings::{ApiSettings, Settings, DEFAULT_API_ENDPOINT};
+use crate::state::{create_command, AccountPhase, Effect, Phase, Selection, TrackerState};
 use crate::tray::Tray;
 
 /// Event carrying the full [`TrackerState`] to the panel.
 pub const STATE_EVENT: &str = "tracker://state";
+/// Event carrying the new [`Settings`] after every save (by the Settings
+/// view, or by the dashboard sign-in flow).
+pub const SETTINGS_EVENT: &str = "settings://changed";
 /// Event asking the panel to switch view (`"dashboard"`, `"settings"`, `"about"`).
 pub const NAVIGATE_EVENT: &str = "app://navigate";
 /// Label of the panel window (see tauri.conf.json).
@@ -116,6 +119,7 @@ pub fn publish(app: &AppHandle) {
 pub fn on_agent_signal(app: &AppHandle, signal: AgentSignal) {
     let core = app.state::<AppCore>();
     let mut auto_start = false;
+    let mut effects = Vec::new();
     {
         let mut tracker = core.tracker();
         match &signal {
@@ -127,7 +131,7 @@ pub fn on_agent_signal(app: &AppHandle, signal: AgentSignal) {
                 if let AgentEvent::Error(err) = event {
                     log::warn!("agent error {}: {}", err.code, err.message);
                 }
-                tracker.reduce(event);
+                effects = tracker.reduce(event);
                 if matches!(event, AgentEvent::Ready(_))
                     && !core.launch_start_done.swap(true, Ordering::SeqCst)
                 {
@@ -147,6 +151,7 @@ pub fn on_agent_signal(app: &AppHandle, signal: AgentSignal) {
             }
         }
     }
+    run_effects(app, effects);
     publish(app);
     if auto_start && !core.is_quitting() {
         log::info!("starting measurement on launch (setting)");
@@ -154,6 +159,246 @@ pub fn on_agent_signal(app: &AppHandle, signal: AgentSignal) {
             log::warn!("start on launch failed: {e}");
         }
     }
+}
+
+/// Carry out what [`TrackerState::reduce`] asked for. Called without the
+/// tracker lock held, before the state is published.
+fn run_effects(app: &AppHandle, effects: Vec<Effect>) {
+    let core = app.state::<AppCore>();
+    for effect in effects {
+        match effect {
+            Effect::Send(cmd) => {
+                if let Err(e) = core.agent.send(&cmd) {
+                    log::warn!("cannot send {cmd:?}: {e}");
+                    let mut tracker = core.tracker();
+                    tracker.account.catalog_loading = false;
+                    tracker.account.last_error = Some(e.to_string());
+                }
+            }
+            Effect::OpenUrl(url) => {
+                if let Err(e) = open_https(app, &url) {
+                    // The card still shows "Open the login page again".
+                    log::warn!("cannot open the login page: {e}");
+                    core.tracker().account.last_error = Some(format!(
+                        "Cannot open your browser ({e}). Use the link below."
+                    ));
+                }
+            }
+            Effect::SaveSelection {
+                selection,
+                api_key,
+                endpoint,
+            } => {
+                if let Err(e) = save_selection(app, selection, api_key, endpoint) {
+                    log::warn!("cannot save the dashboard selection: {e}");
+                    core.tracker().account.last_error = Some(e);
+                }
+            }
+        }
+    }
+}
+
+/// Validate, persist and apply new settings, then tell the panel.
+/// Measurement settings apply to the next start.
+pub fn save_settings(app: &AppHandle, settings: Settings) -> Result<Settings, String> {
+    let settings = settings.normalized();
+    settings.validate()?;
+    let core = app.state::<AppCore>();
+    settings
+        .save(&core.settings_path)
+        .map_err(|e| format!("Cannot save the settings: {e}"))?;
+    core.set_settings(settings.clone());
+    log::info!("settings saved to {}", core.settings_path.display());
+    if let Err(e) = app.emit(SETTINGS_EVENT, &settings) {
+        log::warn!("cannot emit {SETTINGS_EVENT}: {e}");
+    }
+    Ok(settings)
+}
+
+/// Upload to the experiment the user picked, with its project's API key.
+fn save_selection(
+    app: &AppHandle,
+    selection: Selection,
+    api_key: String,
+    endpoint: Option<String>,
+) -> Result<Settings, String> {
+    let mut settings = app.state::<AppCore>().settings();
+    settings.api = ApiSettings {
+        enabled: true,
+        endpoint: endpoint.unwrap_or_else(|| DEFAULT_API_ENDPOINT.to_string()),
+        api_key,
+        experiment_id: selection.experiment_id,
+        organization_name: selection.organization_name,
+        project_name: selection.project_name,
+        experiment_name: selection.experiment_name,
+    };
+    let saved = save_settings(app, settings)?;
+    log::info!(
+        "dashboard uploads go to {} / {} / {}",
+        saved.api.organization_name,
+        saved.api.project_name,
+        saved.api.experiment_name
+    );
+    Ok(saved)
+}
+
+/// Open a web page in the default browser (https only).
+pub fn open_https(app: &AppHandle, url: &str) -> Result<(), String> {
+    if !url.starts_with("https://") {
+        return Err("Only https:// links can be opened.".into());
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// CodeCarbon dashboard account (protocol v2)
+// ---------------------------------------------------------------------------
+
+/// Fails unless the agent is up and speaks protocol v2.
+fn ensure_account_available(core: &AppCore) -> Result<(), String> {
+    let tracker = core.tracker();
+    if tracker.agent_ready.is_none() {
+        return Err("The measurement engine is not ready yet.".into());
+    }
+    if !tracker.account_available() {
+        return Err(
+            "This version of the measurement engine cannot sign in to the dashboard.".into(),
+        );
+    }
+    Ok(())
+}
+
+/// Update the account state, send `cmd`, and undo the update if the
+/// command could not be written.
+fn send_account_command(
+    app: &AppHandle,
+    cmd: AgentCommand,
+    update: impl FnOnce(&mut TrackerState),
+) -> Result<(), String> {
+    let core = app.state::<AppCore>();
+    ensure_account_available(&core)?;
+    let before = core.tracker().account.clone();
+    // Updated *before* sending: the reply may arrive before `send` returns.
+    update(&mut core.tracker());
+    if let Err(e) = core.agent.send(&cmd) {
+        core.tracker().account = before;
+        return Err(e.to_string());
+    }
+    publish(app);
+    Ok(())
+}
+
+/// "Sign in or create an account": start the browser login. While one is
+/// pending, opens its login page again instead of starting another.
+pub fn account_sign_in(app: &AppHandle) -> Result<(), String> {
+    let core = app.state::<AppCore>();
+    let pending = {
+        let tracker = core.tracker();
+        (tracker.account.phase == AccountPhase::SigningIn).then(|| tracker.account.auth_url.clone())
+    };
+    match pending {
+        Some(Some(url)) => open_https(app, &url),
+        Some(None) => Ok(()), // `auth_url` is on its way
+        None => send_account_command(app, AgentCommand::AuthStart, |t| {
+            t.account.phase = AccountPhase::SigningIn;
+            t.account.auth_url = None;
+            t.account.last_error = None;
+        }),
+    }
+}
+
+/// Abandon a pending browser login.
+pub fn account_cancel_sign_in(app: &AppHandle) -> Result<(), String> {
+    let core = app.state::<AppCore>();
+    if core.tracker().account.phase != AccountPhase::SigningIn {
+        return Ok(());
+    }
+    // The agent replies `auth_result(cancelled)` only if a login was
+    // pending, so the state is switched here, not on the reply.
+    let sent = core.agent.send(&AgentCommand::AuthCancel);
+    {
+        let mut tracker = core.tracker();
+        tracker.account.last_error = None;
+        tracker.account.signed_out();
+    }
+    publish(app);
+    sent.map_err(|e| e.to_string())
+}
+
+/// Forget the login, and the API key / experiment it gave us.
+pub fn account_sign_out(app: &AppHandle) -> Result<(), String> {
+    let core = app.state::<AppCore>();
+    let sent = if core.tracker().account_available() {
+        core.agent
+            .send(&AgentCommand::AuthLogout)
+            .map_err(|e| e.to_string())
+    } else {
+        Ok(())
+    };
+    let mut settings = core.settings();
+    settings.api.clear_account();
+    let saved = save_settings(app, settings).map(|_| ());
+    {
+        let mut tracker = core.tracker();
+        tracker.account.last_error = None;
+        tracker.account.signed_out();
+    }
+    publish(app);
+    sent.and(saved)
+}
+
+/// Fetch the organisations / projects / experiments again.
+pub fn account_refresh_catalog(app: &AppHandle) -> Result<(), String> {
+    send_account_command(app, AgentCommand::ApiCatalog, |t| {
+        t.account.catalog_loading = true;
+        t.account.last_error = None;
+    })
+}
+
+/// Create an organisation, a project (in `parent_id`, an organisation) or
+/// an experiment (in `parent_id`, a project).
+pub fn account_create(
+    app: &AppHandle,
+    kind: ApiKind,
+    name: String,
+    description: Option<String>,
+    parent_id: Option<String>,
+) -> Result<(), String> {
+    let cmd = create_command(kind, &name, description.as_deref(), parent_id.as_deref())?;
+    send_account_command(app, cmd, |t| {
+        t.account.creating = true;
+        t.account.last_error = None;
+    })
+}
+
+/// Upload to this experiment: ask for an API key of its project (or reuse
+/// the one we have for that project), then save the settings.
+pub fn account_select_experiment(
+    app: &AppHandle,
+    organization_id: String,
+    project_id: String,
+    experiment_id: String,
+) -> Result<(), String> {
+    let core = app.state::<AppCore>();
+    let current = core.settings().api;
+    let (selection, reuse_key) = core.tracker().account.plan_selection(
+        &organization_id,
+        &project_id,
+        &experiment_id,
+        &current,
+    )?;
+    if reuse_key {
+        let endpoint = core.tracker().account.api_endpoint.clone();
+        let result = save_selection(app, selection, current.api_key, endpoint);
+        publish(app);
+        return result.map(|_| ());
+    }
+    send_account_command(app, AgentCommand::ApiKey { project_id }, |t| {
+        t.account.saving = Some(selection);
+        t.account.last_error = None;
+    })
 }
 
 /// Start measuring with the current settings.

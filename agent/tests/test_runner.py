@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 import logging
+import socket
+import threading
 import time
+import urllib.parse
 
-from codecarbon_agent.runner import format_record
+import pytest
+
+from codecarbon_agent.dashboard import AccountService
+from codecarbon_agent.runner import ACCOUNT_COMMANDS, format_record
+
+from .conftest import auth_config, browser_get, callback_url
 
 FAST = {"interval_secs": 0.5, "save_to_file": False}
 
@@ -15,7 +23,7 @@ def _start(harness, config=None):
 def test_ready_is_the_first_event(harness_factory):
     harness, _ = harness_factory()
     assert harness.events()[0]["event"] == "ready"
-    assert harness.events()[0]["protocol_version"] == 1
+    assert harness.events()[0]["protocol_version"] == 2
 
 
 def test_status_idle(harness_factory):
@@ -233,3 +241,149 @@ def test_eof_watchdog_forces_exit_when_the_loop_is_stuck(monkeypatch):
     monkeypatch.setattr(runner, "_force_exit", forced.set)
     runner._read_stdin()  # hits EOF at once; the main loop is "stuck" (never drains)
     assert forced.wait(2.0), "the EOF watchdog did not fire"
+
+
+# --------------------------------------------------------------------------- protocol v2
+
+
+def _account_options(tmp_path, oidc, api, **config):
+    def factory(emit):
+        return AccountService(
+            tmp_path / "credentials.json",
+            emit,
+            auth_config=auth_config(oidc, **config),
+            api_endpoint="https://api.example.test",
+            client_factory=api.factory,
+        )
+
+    return {"account_factory": factory}
+
+
+def _redirect_port(auth_url):
+    query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(auth_url).query))
+    return urllib.parse.urlsplit(query["redirect_uri"]).port
+
+
+def _assert_port_closed(port):
+    with socket.socket() as sock, pytest.raises(ConnectionRefusedError):
+        sock.connect(("127.0.0.1", port))
+
+
+def test_account_commands_unavailable_without_credentials(harness_factory):
+    harness, _ = harness_factory()
+    for cmd in sorted(ACCOUNT_COMMANDS):
+        error = harness.request({"cmd": cmd}, "error")
+        assert error["code"] == "auth_unavailable", cmd
+        assert "--credentials" in error["message"]
+
+
+def test_credentials_path_enables_auth_status(harness_factory, tmp_path, monkeypatch):
+    monkeypatch.delenv("CODECARBON_API_ENDPOINT", raising=False)
+    path = tmp_path / "x" / "credentials.json"
+    harness, _ = harness_factory(runner_options={"credentials_path": str(path)})
+    status = harness.request({"cmd": "auth_status"}, "auth_status")
+    assert status["logged_in"] is False
+    assert status["user"] is None
+    assert status["api_endpoint"] == "https://api.codecarbon.io"
+    assert not path.exists()
+
+
+def test_login_through_the_runner(harness_factory, tmp_path, fake_oidc, fake_api):
+    harness, _ = harness_factory(runner_options=_account_options(tmp_path, fake_oidc, fake_api))
+    fake_oidc.token_replies.append((200, fake_oidc.tokens()))
+    url = harness.request({"cmd": "auth_start"}, "auth_url")["url"]
+    assert browser_get(callback_url(url, code="abc"))[0] == 200
+    result = harness.wait_event("auth_result")
+    assert result["ok"] is True
+    assert result["user"] == {"name": "Ada", "email": "ada@example.org"}
+    status = harness.request({"cmd": "auth_status"}, "auth_status")
+    assert status["logged_in"] is True
+    assert status["api_endpoint"] == "https://api.example.test"
+    catalog = harness.request({"cmd": "api_catalog"}, "api_catalog")
+    assert catalog["organizations"][0]["projects"][0]["experiments"][0]["id"] == "e1"
+    assert harness.request({"cmd": "auth_logout"}, "auth_status")["logged_in"] is False
+    error = harness.request({"cmd": "api_catalog"}, "error")
+    assert error["code"] == "not_logged_in"
+
+
+def test_measurement_continues_while_login_pending(harness_factory, tmp_path, fake_oidc, fake_api):
+    harness, trackers = harness_factory(
+        runner_options=_account_options(tmp_path, fake_oidc, fake_api)
+    )
+    _start(harness)
+    seen = len(harness.events())
+    url = harness.request({"cmd": "auth_start"}, "auth_url")["url"]
+    # the sampler keeps going and the stdin loop keeps answering
+    harness.wait_for(
+        lambda e: [x["event"] for x in harness.events()[seen:]].count("measurement") >= 2,
+        timeout=3,
+    )
+    t0 = time.monotonic()
+    assert harness.request({"cmd": "status"}, "status")["state"] == "running"
+    assert time.monotonic() - t0 < 0.5
+    # the account worker is free too: other commands are answered
+    assert harness.request({"cmd": "api_catalog"}, "error")["code"] == "not_logged_in"
+    harness.request({"cmd": "stop"}, "stopped")
+    result = harness.request({"cmd": "auth_cancel"}, "auth_result")
+    assert result["cancelled"] is True
+    _assert_port_closed(_redirect_port(url))
+    assert trackers[0].stopped
+
+
+def test_quit_while_login_pending(harness_factory, tmp_path, fake_oidc, fake_api):
+    harness, _ = harness_factory(runner_options=_account_options(tmp_path, fake_oidc, fake_api))
+    url = harness.request({"cmd": "auth_start"}, "auth_url")["url"]
+    t0 = time.monotonic()
+    harness.send({"cmd": "quit"})
+    assert harness.join(5) == 0
+    assert time.monotonic() - t0 < 2.0
+    last = harness.events()[-1]
+    assert last["event"] == "auth_result" and last["cancelled"] is True
+    _assert_port_closed(_redirect_port(url))
+
+
+def test_eof_while_login_pending_with_a_run(harness_factory, tmp_path, fake_oidc, fake_api):
+    harness, trackers = harness_factory(
+        runner_options=_account_options(tmp_path, fake_oidc, fake_api)
+    )
+    _start(harness)
+    url = harness.request({"cmd": "auth_start"}, "auth_url")["url"]
+    harness.stdin.close()
+    assert harness.join(5) == 0
+    names = harness.names()
+    assert names[-1] == "stopped"
+    assert harness.events()[names.index("auth_url") :][-2]["cancelled"] is True
+    assert trackers[0].stopped
+    _assert_port_closed(_redirect_port(url))
+
+
+def test_account_commands_run_in_order_off_the_main_loop(harness_factory):
+    release = threading.Event()
+    handled = []
+
+    class SlowAccount:
+        def __init__(self, emit):
+            self.emit = emit
+
+        def handle(self, message):
+            if message["cmd"] == "api_catalog" and not handled:
+                handled.append("boom")
+                raise RuntimeError("kaboom")
+            release.wait(5)
+            handled.append(message["cmd"])
+            self.emit({"event": "done", "ts": "", "cmd": message["cmd"]})
+
+        def shutdown(self):
+            release.set()
+
+    harness, _ = harness_factory(runner_options={"account_factory": SlowAccount})
+    error = harness.request({"cmd": "api_catalog"}, "error")
+    assert error["code"] == "internal" and "kaboom" in error["message"]
+    harness.send({"cmd": "auth_status"})
+    harness.send({"cmd": "api_key", "project_id": "p"})
+    t0 = time.monotonic()
+    assert harness.request({"cmd": "status"}, "status")["state"] == "idle"
+    assert time.monotonic() - t0 < 0.5  # the worker is blocked, the loop is not
+    release.set()
+    harness.wait_for(lambda e: handled[-1:] == ["api_key"])
+    assert handled == ["boom", "auth_status", "api_key"]

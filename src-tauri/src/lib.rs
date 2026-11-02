@@ -93,6 +93,12 @@ pub fn run() {
             commands::open_data_folder,
             commands::open_url,
             commands::quit_app,
+            commands::account_sign_in,
+            commands::account_cancel_sign_in,
+            commands::account_sign_out,
+            commands::account_refresh_catalog,
+            commands::account_create,
+            commands::account_select_experiment,
         ])
         .setup(|app| {
             setup(app)?;
@@ -161,7 +167,15 @@ fn setup(app: &mut App) -> anyhow::Result<()> {
     }
 
     let launch_at_login = settings.launch_at_login;
-    let agent = AgentHandle::new(handle.clone(), Arc::new(controller::on_agent_signal));
+    let credentials = config_dir.join(agent::CREDENTIALS_FILE);
+    if let Err(e) = std::fs::create_dir_all(&config_dir) {
+        log::warn!("cannot create {}: {e}", config_dir.display());
+    }
+    let agent = AgentHandle::new(
+        handle.clone(),
+        Arc::new(controller::on_agent_signal),
+        Some(credentials),
+    );
     app.manage(AppCore::new(settings, settings_path, data_dir, agent));
 
     // A missing tray (e.g. a Linux desktop without StatusNotifier support)

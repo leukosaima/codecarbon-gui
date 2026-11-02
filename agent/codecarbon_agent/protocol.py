@@ -23,8 +23,24 @@ NOT_RUNNING = "not_running"
 BAD_COMMAND = "bad_command"
 TRACKER_INIT_FAILED = "tracker_init_failed"
 INTERNAL = "internal"
+# Protocol v2: CodeCarbon dashboard account.
+AUTH_UNAVAILABLE = "auth_unavailable"
+NOT_LOGGED_IN = "not_logged_in"
+API_ERROR = "api_error"
+AUTH_FAILED = "auth_failed"  # only inside ``auth_result``, never an ``error`` event
 
-ERROR_CODES = frozenset({ALREADY_RUNNING, NOT_RUNNING, BAD_COMMAND, TRACKER_INIT_FAILED, INTERNAL})
+ERROR_CODES = frozenset(
+    {
+        ALREADY_RUNNING,
+        NOT_RUNNING,
+        BAD_COMMAND,
+        TRACKER_INIT_FAILED,
+        INTERNAL,
+        AUTH_UNAVAILABLE,
+        NOT_LOGGED_IN,
+        API_ERROR,
+    }
+)
 
 
 def now_iso() -> str:
@@ -123,6 +139,47 @@ def log_event(level: str, message: str) -> dict[str, Any]:
 
 def error_event(code: str, message: str) -> dict[str, Any]:
     return make_event("error", code=code, message=message)
+
+
+# --------------------------------------------------------------------------- protocol v2
+
+
+def auth_url_event(url: str) -> dict[str, Any]:
+    return make_event("auth_url", url=url)
+
+
+def auth_success_event(user: Mapping[str, Any]) -> dict[str, Any]:
+    return make_event("auth_result", ok=True, user=dict(user))
+
+
+def auth_failure_event(message: str, *, cancelled: bool = False) -> dict[str, Any]:
+    event = make_event("auth_result", ok=False, cancelled=cancelled, message=message)
+    if not cancelled:
+        event["code"] = AUTH_FAILED
+    return event
+
+
+def auth_status_event(
+    logged_in: bool, user: Mapping[str, Any] | None, api_endpoint: str
+) -> dict[str, Any]:
+    return make_event(
+        "auth_status",
+        logged_in=logged_in,
+        user=dict(user) if user is not None else None,
+        api_endpoint=api_endpoint,
+    )
+
+
+def api_catalog_event(organizations: list[dict[str, Any]]) -> dict[str, Any]:
+    return make_event("api_catalog", organizations=organizations)
+
+
+def api_created_event(kind: str, item: Mapping[str, Any]) -> dict[str, Any]:
+    return make_event("api_created", kind=kind, item=dict(item))
+
+
+def api_key_event(project_id: str, api_key: str) -> dict[str, Any]:
+    return make_event("api_key", project_id=project_id, api_key=api_key)
 
 
 class Writer:

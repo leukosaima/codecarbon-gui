@@ -12,8 +12,11 @@ codecarbon_agent/
   protocol.py   event builders, JSON sanitising (no NaN), thread-safe Writer
   tracker.py    TrackerSession: config → CodeCarbon tracker → started/measurement/stopped payloads
   runner.py     stdin command loop + background sampling thread + log forwarding
+                + "account" worker thread for the auth_* / api_* commands
+  auth.py       dashboard login: OIDC code + PKCE, callback server, credentials file, refresh
+  dashboard.py  auth_* / api_* commands; REST calls through CodeCarbon's ApiClient
   compat.py     py-cpuinfo workaround for the frozen binary
-  __main__.py   CLI: protocol mode, --version, --selftest
+  __main__.py   CLI: protocol mode, --version, --selftest, --credentials
 ```
 
 ## Develop and test
@@ -33,6 +36,25 @@ Try it by hand:
 printf '%s\n' '{"cmd":"start","config":{"interval_secs":1,"country_iso_code":"FRA","save_to_file":false}}' \
   | python -m codecarbon_agent          # EOF on stdin stops the run and exits 0
 python -m codecarbon_agent --selftest --seconds 3
+```
+
+## CodeCarbon dashboard account (protocol v2)
+
+`codecarbon-agent --credentials <path>/credentials.json` enables the
+`auth_start` / `auth_cancel` / `auth_status` / `auth_logout` and
+`api_catalog` / `api_create` / `api_key` commands (without the flag they reply
+`error(auth_unavailable)`). The login is the one of `codecarbon login`
+(Keycloak realm `codecarbon`, client `codecarbon-cli`, callback on
+`http://localhost:8090/callback`, 5 min timeout); tokens are stored in that
+file (mode 0600) and never sent to the app. `CODECARBON_API_ENDPOINT`,
+`AUTH_SERVER_WELL_KNOWN` and `AUTH_CLIENT_ID` point it at a staging server.
+These commands run one at a time on their own thread, so they never delay a
+running measurement. The tests use a fake OpenID provider on 127.0.0.1 and a
+fake `ApiClient`: no network.
+
+```sh
+printf '%s\n' '{"cmd":"auth_status"}' '{"cmd":"auth_start"}' \
+  | python -m codecarbon_agent --credentials /tmp/cc/credentials.json
 ```
 
 ## Build the sidecar binary

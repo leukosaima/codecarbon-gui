@@ -9,7 +9,7 @@
 - [x] Installation guide for non-technical users
 
 ## v0.2 — "share it"
-- **CodeCarbon dashboard account** (in progress): browser login (OpenID
+- [x] **CodeCarbon dashboard account** (v0.1.1): browser login (OpenID
   Connect + PKCE, same flow as `codecarbon login`), choose or create
   organisation → project → experiment from drop-downs, project API key
   fetched automatically, sessions uploaded through `save_to_api`.

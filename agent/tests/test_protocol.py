@@ -54,7 +54,7 @@ def test_encode_is_one_compact_valid_json_line():
 def test_ready_event_fields():
     event = ready_event()
     assert event["event"] == "ready"
-    assert event["protocol_version"] == PROTOCOL_VERSION == 1
+    assert event["protocol_version"] == PROTOCOL_VERSION == 2
     assert event["agent_version"] == __version__
     for key in ("codecarbon_version", "python_version", "pid", "platform"):
         assert key in event

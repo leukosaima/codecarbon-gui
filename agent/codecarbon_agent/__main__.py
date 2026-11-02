@@ -3,6 +3,7 @@
 ``codecarbon-agent``              protocol mode (JSON lines on stdin / stdout)
 ``codecarbon-agent --version``    print the versions
 ``codecarbon-agent --selftest``   short real measurement, exit 0 on success
+``codecarbon-agent --credentials <file>``   enables the dashboard login (protocol v2)
 """
 
 from __future__ import annotations
@@ -47,6 +48,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=_positive_float,
         default=None,
         help="duration of --selftest in seconds (default 3)",
+    )
+    parser.add_argument(
+        "--credentials",
+        metavar="PATH",
+        default=None,
+        help="credentials file of the CodeCarbon dashboard login (created with mode 0600); "
+        "without it the auth_* / api_* commands reply error(auth_unavailable)",
     )
     parser.add_argument(
         "--log-level",
@@ -214,6 +222,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 default_log_level=args.log_level,
                 install_signals=True,
                 prewarm=True,
+                credentials_path=args.credentials,
             )
             code = runner.run()
     except Exception:  # noqa: BLE001

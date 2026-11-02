@@ -15,13 +15,15 @@ use crate::state::{Phase, TrackerState};
 
 const TRAY_ID: &str = "codecarbon";
 
-// Grey outlined leaf (idle) / filled leaf (active), monochrome + alpha.
+// The CodeCarbon molecule mark (icons/src/tray-mark.svg): lime when
+// measuring, dimmed grey when idle. On macOS they are template images, so
+// only the alpha channel is used (idle = 45 % opacity).
 // Windows shows tray icons at 16–24 px and scales badly from 88 px, so it
-// gets the 44 px assets; macOS and Linux get the @2x ones.
+// gets the 32 px assets; macOS and Linux get the @2x ones.
 #[cfg(windows)]
-const ICON_IDLE: &[u8] = include_bytes!("../icons/tray/tray-idle.png");
+const ICON_IDLE: &[u8] = include_bytes!("../icons/tray/tray-idle-32.png");
 #[cfg(windows)]
-const ICON_ACTIVE: &[u8] = include_bytes!("../icons/tray/tray-active.png");
+const ICON_ACTIVE: &[u8] = include_bytes!("../icons/tray/tray-active-32.png");
 #[cfg(not(windows))]
 const ICON_IDLE: &[u8] = include_bytes!("../icons/tray/tray-idle@2x.png");
 #[cfg(not(windows))]

@@ -92,6 +92,69 @@ export interface TrackerState {
   last_summary: Summary | null;
   notes: string[];
   error: string | null;
+  account: AccountState;
+}
+
+// --- CodeCarbon dashboard account (protocol v2) ------------------------------
+
+export type AccountPhase = "unknown" | "signed_out" | "signing_in" | "signed_in";
+
+export interface User {
+  name: string | null;
+  email: string | null;
+}
+
+export interface Experiment {
+  id: string;
+  name: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  experiments: Experiment[];
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  projects: Project[];
+}
+
+export interface Catalog {
+  organizations: Organization[];
+}
+
+export type ApiKind = "organization" | "project" | "experiment";
+
+export interface Selection {
+  organization_id: string;
+  organization_name: string;
+  project_id: string;
+  project_name: string;
+  experiment_id: string;
+  experiment_name: string;
+}
+
+export interface Created {
+  kind: string;
+  id: string;
+  parent_id: string | null;
+}
+
+export interface AccountState {
+  phase: AccountPhase;
+  user: User | null;
+  api_endpoint: string | null;
+  catalog: Catalog | null;
+  catalog_loading: boolean;
+  /** Login page of the pending sign-in ("open it again"). */
+  auth_url: string | null;
+  creating: boolean;
+  last_created: Created | null;
+  /** Waiting for the API key of this selection. */
+  saving: Selection | null;
+  last_error: string | null;
 }
 
 export interface ApiSettings {
@@ -99,6 +162,10 @@ export interface ApiSettings {
   endpoint: string;
   api_key: string;
   experiment_id: string;
+  /** Display only: where the uploads go. */
+  organization_name: string;
+  project_name: string;
+  experiment_name: string;
 }
 
 export interface Settings {
@@ -127,9 +194,34 @@ export const openDataFolder = (): Promise<void> => invoke("open_data_folder");
 export const openUrl = (url: string): Promise<void> => invoke("open_url", { url });
 export const quitApp = (): Promise<void> => invoke("quit_app");
 
+export const accountSignIn = (): Promise<void> => invoke("account_sign_in");
+export const accountCancelSignIn = (): Promise<void> => invoke("account_cancel_sign_in");
+/** Also forgets the API key / experiment and turns uploads off. */
+export const accountSignOut = (): Promise<void> => invoke("account_sign_out");
+export const accountRefreshCatalog = (): Promise<void> => invoke("account_refresh_catalog");
+/** `parentId`: the organisation of a project, the project of an experiment. */
+export const accountCreate = (
+  kind: ApiKind,
+  name: string,
+  parentId: string | null,
+  description: string | null = null,
+): Promise<void> => invoke("account_create", { kind, name, description, parentId });
+/** Fetches an API key for the project, then saves the settings (`onSettings`). */
+export const accountSelectExperiment = (
+  organizationId: string,
+  projectId: string,
+  experimentId: string,
+): Promise<void> =>
+  invoke("account_select_experiment", { organizationId, projectId, experimentId });
+
 /** Called with the full state after every change on the Rust side. */
 export function onState(callback: (state: TrackerState) => void): Promise<UnlistenFn> {
   return listen<TrackerState>("tracker://state", (event) => callback(event.payload));
+}
+
+/** Called with the new settings after every save (any view, or the sign-in flow). */
+export function onSettings(callback: (settings: Settings) => void): Promise<UnlistenFn> {
+  return listen<Settings>("settings://changed", (event) => callback(event.payload));
 }
 
 /** The tray asks the panel to show a given view ("Settings…"). */

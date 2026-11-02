@@ -10,7 +10,11 @@
 //!   1 s, 3 s, then 10 s. After the third failure in a row the handler gets
 //!   `Exited { restarting: false }` and the UI offers "Retry"
 //!   ([`AgentHandle::restart`]).
+//! * The agent is passed `--credentials <app config dir>/credentials.json`
+//!   (protocol v2, dashboard login). An older agent that rejects the flag
+//!   (exit code 2 before `ready`) is restarted at once without it.
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -24,6 +28,10 @@ use crate::protocol::{AgentCommand, AgentEvent, ReadyInfo, PROTOCOL_VERSION};
 /// Name of the sidecar, as copied next to the app executable by tauri-build
 /// (the `binaries/` prefix and the target triple are stripped).
 pub const SIDECAR_NAME: &str = "codecarbon-agent";
+
+/// File, in the app config directory, where the agent keeps the CodeCarbon
+/// dashboard login (`--credentials`). Only the agent reads or writes it.
+pub const CREDENTIALS_FILE: &str = "credentials.json";
 
 /// Delays before restart attempts 1, 2 and 3.
 const BACKOFF: [Duration; 3] = [
@@ -70,6 +78,10 @@ struct Inner {
     generation: u64,
     /// Set when the app quits: exits are expected, no restart.
     shutting_down: bool,
+    /// The agent rejected `--credentials` (a v1 agent): do not pass it again.
+    no_credentials_flag: bool,
+    /// The live process sent `ready` (tells a CLI usage error from a crash).
+    got_ready: bool,
 }
 
 /// Cheap-to-clone handle on the supervised agent.
@@ -78,15 +90,32 @@ pub struct AgentHandle {
     inner: Arc<Mutex<Inner>>,
     app: AppHandle,
     handler: SignalHandler,
+    /// Passed as `--credentials`; where the agent keeps the dashboard tokens.
+    credentials: Option<PathBuf>,
 }
 
 impl AgentHandle {
     /// Create the handle. Nothing is spawned until [`AgentHandle::start`].
-    pub fn new(app: AppHandle, handler: SignalHandler) -> Self {
+    ///
+    /// `credentials` is the file where the agent keeps the CodeCarbon
+    /// dashboard login (`None`: no login possible).
+    pub fn new(app: AppHandle, handler: SignalHandler, credentials: Option<PathBuf>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(Inner::default())),
             app,
             handler,
+            credentials,
+        }
+    }
+
+    /// The command-line arguments of the agent.
+    fn args(&self) -> Vec<String> {
+        match &self.credentials {
+            Some(path) if !self.lock().no_credentials_flag => vec![
+                "--credentials".to_string(),
+                path.to_string_lossy().into_owned(),
+            ],
+            _ => Vec::new(),
         }
     }
 
@@ -136,7 +165,7 @@ impl AgentHandle {
     /// Write one command on the agent's stdin.
     pub fn send(&self, cmd: &AgentCommand) -> Result<(), AgentError> {
         let line = cmd.to_line();
-        log::debug!("→ agent: {}", line.trim_end());
+        log::debug!("→ agent: {}", cmd.to_log_line().trim_end());
         let mut inner = self.lock();
         let child = inner.child.as_mut().ok_or(AgentError::NotRunning)?;
         child
@@ -198,10 +227,20 @@ impl AgentHandle {
         let mut failures = 0usize;
         loop {
             let started = Instant::now();
+            let passed_credentials = !self.args().is_empty();
             let detail = self.run_once(generation).await;
             if !self.is_current(generation) {
                 log::info!("agent exited ({detail}); not restarting (quit or restart requested)");
                 return;
+            }
+            if passed_credentials && detail == "exit code 2" && !self.lock().got_ready {
+                // CLI usage error: an agent older than protocol v2.
+                log::warn!(
+                    "agent rejected --credentials (protocol v1?); restarting it without \
+                     (dashboard sign-in unavailable)"
+                );
+                self.lock().no_credentials_flag = true;
+                continue;
             }
             if started.elapsed() >= STABLE_AFTER {
                 failures = 0;
@@ -241,7 +280,10 @@ impl AgentHandle {
         };
         // A process group lets us kill the PyInstaller bootloader *and* the
         // Python process it starts; kill_on_drop is a safety net.
-        let command = command.set_process_group(true).kill_on_drop(true);
+        let command = command
+            .args(self.args())
+            .set_process_group(true)
+            .kill_on_drop(true);
         let (mut rx, child) = match command.spawn() {
             Ok(pair) => pair,
             Err(e) => return format!("cannot start {SIDECAR_NAME}: {e}"),
@@ -256,6 +298,7 @@ impl AgentHandle {
             }
             inner.child = Some(child);
             inner.ready = None;
+            inner.got_ready = false;
         }
 
         let mut detail = "the process exited".to_string();
@@ -310,7 +353,14 @@ impl AgentHandle {
                 return;
             }
         };
-        log::debug!("← agent: {line}");
+        if let AgentEvent::ApiKey(key) = &event {
+            log::debug!(
+                "← agent: api_key for project {} (key not logged)",
+                key.project_id
+            );
+        } else {
+            log::debug!("← agent: {line}");
+        }
         {
             let mut inner = self.lock();
             if inner.generation != generation {
@@ -318,6 +368,7 @@ impl AgentHandle {
             }
             if let AgentEvent::Ready(info) = &event {
                 if info.protocol_version != PROTOCOL_VERSION {
+                    // Not fatal: unknown fields/events are ignored both ways.
                     log::warn!(
                         "agent speaks protocol v{}, this app expects v{PROTOCOL_VERSION}",
                         info.protocol_version
@@ -330,6 +381,7 @@ impl AgentHandle {
                     info.python_version
                 );
                 inner.ready = Some(info.clone());
+                inner.got_ready = true;
             }
         }
         (self.handler)(&self.app, AgentSignal::Event(Box::new(event)));

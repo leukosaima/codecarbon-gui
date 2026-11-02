@@ -2,7 +2,7 @@
 # PyInstaller spec for the one-file `codecarbon-agent` sidecar.
 # Build with `python build.py` (which also copies the binary for Tauri).
 
-from PyInstaller.utils.hooks import collect_all, copy_metadata
+from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
 
 # The dashboard (dash/plotly) and the `codecarbon` CLI (typer/questionary) are
 # never used by the agent; leaving them out keeps the binary small.
@@ -19,6 +19,17 @@ hiddenimports += [
     "codecarbon_agent.protocol",
     "codecarbon_agent.runner",
     "codecarbon_agent.tracker",
+    # protocol v2 (dashboard login), imported lazily by the runner
+    "codecarbon_agent.auth",
+    "codecarbon_agent.dashboard",
+    "codecarbon.core.api_client",
+    "codecarbon.core.schemas",
+    "requests",
+    "certifi",
+    "authlib.common.security",
+    "authlib.integrations.requests_client",
+    "authlib.oauth2.rfc7636",
+    "cryptography",
     # imported lazily by CodeCarbon
     "codecarbon.output_methods.file",
     "codecarbon.core.resource_tracker",
@@ -27,6 +38,8 @@ hiddenimports += [
     "psutil",
     "cpuinfo",
 ]
+# joserfc registers its JWS / JWK algorithms (RSA, EC, OKP: `cryptography`) from submodules.
+hiddenimports += collect_submodules("joserfc")
 
 a = Analysis(
     ["pyinstaller_entry.py"],
