@@ -17,6 +17,7 @@ use std::collections::VecDeque;
 
 use serde::Serialize;
 
+use crate::error::AppError;
 use crate::protocol::{
     AgentCommand, AgentEvent, ApiKind, AuthResult, AuthStatusInfo, Catalog, ErrorInfo, Hardware,
     Location, Measurement, ReadyInfo, Summary, User, ACCOUNT_PROTOCOL_VERSION,
@@ -71,7 +72,7 @@ pub struct TrackerState {
     /// CodeCarbon warnings (from `log` events), deduplicated.
     pub notes: Vec<String>,
     /// Last error to show to the user, if any.
-    pub error: Option<String>,
+    pub error: Option<AppError>,
     /// The CodeCarbon dashboard account (protocol v2).
     pub account: AccountState,
 }
@@ -125,7 +126,7 @@ pub struct AccountState {
     /// `api_key` sent for this selection, waiting for the key.
     pub saving: Option<Selection>,
     /// Last account error to show in the card.
-    pub last_error: Option<String>,
+    pub last_error: Option<AppError>,
 }
 
 /// Side effect requested by [`TrackerState::reduce`], run by the controller.
@@ -143,21 +144,21 @@ pub enum Effect {
     },
 }
 
-/// The `api_create` command for what the user typed, or a message for the UI.
+/// The `api_create` command for what the user typed, or an error for the UI.
 pub fn create_command(
     kind: ApiKind,
     name: &str,
     description: Option<&str>,
     parent_id: Option<&str>,
-) -> Result<AgentCommand, String> {
+) -> Result<AgentCommand, AppError> {
     let name = name.trim();
     if name.is_empty() {
-        return Err("Please enter a name.".into());
+        return Err(AppError::NameRequired);
     }
     let parent_id = parent_id.map(str::trim).filter(|p| !p.is_empty());
     let parent_id = match kind {
         ApiKind::Organization => None,
-        _ => Some(parent_id.ok_or("Choose where to create it first.")?),
+        _ => Some(parent_id.ok_or(AppError::ParentRequired)?),
     };
     Ok(AgentCommand::ApiCreate {
         kind,
@@ -180,15 +181,12 @@ impl AccountState {
         project_id: &str,
         experiment_id: &str,
         current: &ApiSettings,
-    ) -> Result<(Selection, bool), String> {
-        let catalog = self
-            .catalog
-            .as_ref()
-            .ok_or("The list of experiments is not loaded yet.")?;
+    ) -> Result<(Selection, bool), AppError> {
+        let catalog = self.catalog.as_ref().ok_or(AppError::CatalogNotLoaded)?;
         let (org, project, experiment) = catalog
             .experiment(experiment_id)
             .filter(|(o, p, _)| o.id == organization_id && p.id == project_id)
-            .ok_or("This experiment is not in the list any more. Refresh it.")?;
+            .ok_or(AppError::ExperimentGone)?;
         let selection = Selection {
             organization_id: org.id.clone(),
             organization_name: org.name.clone(),
@@ -244,7 +242,7 @@ impl AccountState {
                 r.message
                     .clone()
                     .filter(|m| !m.trim().is_empty())
-                    .unwrap_or_else(|| "Sign-in failed.".to_string()),
+                    .map_or(AppError::SignInFailed, AppError::SignInRejected),
             );
         }
         if self.phase != AccountPhase::SignedIn {
@@ -275,6 +273,8 @@ impl AccountState {
         Vec::new()
     }
 
+    /// The agent's message (logged by the controller) is only shown for
+    /// errors we have no text of our own for, as `{detail}`.
     fn on_error(&mut self, err: &ErrorInfo) {
         let message = (!err.message.trim().is_empty()).then(|| err.message.clone());
         self.catalog_loading = false;
@@ -282,26 +282,19 @@ impl AccountState {
         self.saving = None;
         match err.code.as_str() {
             "not_logged_in" => {
-                self.last_error = Some(
-                    message.unwrap_or_else(|| "Please sign in to the dashboard again.".into()),
-                );
+                self.last_error = Some(AppError::SignInAgain);
                 self.signed_out();
             }
             "auth_unavailable" => {
-                self.last_error = Some(message.unwrap_or_else(|| {
-                    "Signing in is not available with this measurement engine.".into()
-                }));
+                self.last_error = Some(AppError::AuthUnavailable);
                 if self.phase == AccountPhase::SigningIn {
                     self.signed_out();
                 }
             }
             _ => {
-                self.last_error = Some(message.unwrap_or_else(|| {
-                    format!(
-                        "The CodeCarbon dashboard could not be reached ({}).",
-                        err.code
-                    )
-                }));
+                self.last_error = Some(AppError::DashboardError(
+                    message.unwrap_or_else(|| err.code.clone()),
+                ));
             }
         }
     }
@@ -365,17 +358,13 @@ impl TrackerState {
         if restarting {
             self.phase = Phase::Idle;
             self.error = Some(if was_measuring {
-                "The measurement engine stopped unexpectedly and is restarting. \
-                 The current measurement was lost."
-                    .to_string()
+                AppError::EngineRestartingLost
             } else {
-                "The measurement engine stopped unexpectedly and is restarting…".to_string()
+                AppError::EngineRestarting
             });
         } else {
             self.phase = Phase::AgentError;
-            self.error = Some(format!(
-                "The measurement engine could not be started ({detail})."
-            ));
+            self.error = Some(AppError::EngineFailed(detail.to_string()));
         }
     }
 
@@ -401,10 +390,7 @@ impl TrackerState {
             AgentEvent::Ready(info) => {
                 // A fresh agent has no tracker running.
                 if self.is_busy() {
-                    self.error = Some(
-                        "The measurement engine restarted; the current measurement was lost."
-                            .to_string(),
-                    );
+                    self.error = Some(AppError::EngineRestartedLost);
                 } else if self.phase == Phase::AgentError || self.error.is_some() {
                     self.error = None;
                 }
@@ -472,11 +458,11 @@ impl TrackerState {
                     }
                 }
                 if err.code != "not_running" && err.code != "already_running" {
-                    self.error = Some(if err.message.is_empty() {
-                        format!("Measurement error ({})", err.code)
+                    self.error = Some(AppError::MeasurementFailed(if err.message.is_empty() {
+                        err.code.clone()
                     } else {
                         err.message.clone()
-                    });
+                    }));
                 }
             }
             AgentEvent::AuthUrl(auth) => {
@@ -488,7 +474,7 @@ impl TrackerState {
                     return vec![Effect::OpenUrl(auth.url.clone())];
                 }
                 account.auth_url = None;
-                account.last_error = Some("The login page address is not secure (https).".into());
+                account.last_error = Some(AppError::InsecureLoginUrl);
             }
             AgentEvent::AuthResult(result) => return self.account.on_auth_result(result),
             AgentEvent::AuthStatus(status) => return self.account.on_auth_status(status),
@@ -533,7 +519,7 @@ impl TrackerState {
                 }
                 if matches {
                     account.saving = None;
-                    account.last_error = Some("The dashboard returned an empty API key.".into());
+                    account.last_error = Some(AppError::EmptyApiKey);
                 }
             }
             AgentEvent::Unknown => {}
@@ -558,6 +544,7 @@ impl TrackerState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::AppError;
     use crate::protocol::{Breakdown, ErrorInfo, LogLine, StartedInfo, StatusInfo};
 
     fn ready() -> AgentEvent {
@@ -682,7 +669,7 @@ mod tests {
             message: "boom".into(),
         }));
         assert_eq!(s.phase, Phase::Idle);
-        assert_eq!(s.error.as_deref(), Some("boom"));
+        assert_eq!(s.error, Some(AppError::MeasurementFailed("boom".into())));
         assert!(s.can_start());
         s.begin_start();
         assert!(s.error.is_none());
@@ -721,7 +708,7 @@ mod tests {
         s.agent_exited(true, "exit code 1");
         assert_eq!(s.phase, Phase::Idle);
         assert!(s.agent_ready.is_none());
-        assert!(s.error.as_deref().unwrap().contains("lost"));
+        assert_eq!(s.error, Some(AppError::EngineRestartingLost));
         s.reduce(&ready());
         assert!(s.can_start());
 
@@ -951,8 +938,10 @@ mod tests {
         }));
         assert_eq!(s.account.phase, AccountPhase::SignedOut);
         assert_eq!(
-            s.account.last_error.as_deref(),
-            Some("Authorization failed: access_denied")
+            s.account.last_error,
+            Some(AppError::SignInRejected(
+                "Authorization failed: access_denied".into()
+            ))
         );
         assert!(s.account.auth_url.is_none());
 
@@ -978,7 +967,10 @@ mod tests {
         s.reduce(&error("api_error", "502 Bad Gateway"));
         assert_eq!(s.phase, Phase::Starting, "still waiting for `started`");
         assert!(s.error.is_none());
-        assert_eq!(s.account.last_error.as_deref(), Some("502 Bad Gateway"));
+        assert_eq!(
+            s.account.last_error,
+            Some(AppError::DashboardError("502 Bad Gateway".into()))
+        );
         s.reduce(&started());
         assert_eq!(s.phase, Phase::Running);
     }
@@ -1004,14 +996,12 @@ mod tests {
         assert_eq!(s.account.phase, AccountPhase::SignedIn);
         assert!(!s.account.catalog_loading && !s.account.creating);
         assert!(s.account.saving.is_none());
-        assert!(s
-            .account
-            .last_error
-            .as_deref()
-            .unwrap()
-            .contains("api_error"));
+        assert_eq!(
+            s.account.last_error,
+            Some(AppError::DashboardError("api_error".into()))
+        );
         s.reduce(&error("auth_unavailable", "no --credentials"));
-        assert_eq!(s.account.last_error.as_deref(), Some("no --credentials"));
+        assert_eq!(s.account.last_error, Some(AppError::AuthUnavailable));
     }
 
     #[test]

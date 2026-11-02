@@ -8,6 +8,8 @@ for people who do not want to open a terminal.
 * **Start / Stop** measuring from the tray icon.
 * **See** live power (W), energy (Wh) and CO₂e (g), plus a summary of each session.
 * **Keep** a history in a CSV file written by CodeCarbon itself.
+* **In English or French** (en français) — it follows your system's language;
+  change it under Settings → Language.
 * Later: log in to the CodeCarbon API and upload your sessions (see the [roadmap](docs/ROADMAP.md)).
 
 <p align="center">

@@ -7,6 +7,9 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { errorText, type AppError, type LanguageSetting } from "./i18n/i18n";
+
+export type { AppError } from "./i18n/i18n";
 
 export type Phase = "idle" | "starting" | "running" | "stopping" | "agent_error";
 
@@ -91,7 +94,8 @@ export interface TrackerState {
   history: HistoryPoint[];
   last_summary: Summary | null;
   notes: string[];
-  error: string | null;
+  /** Translated with `errorMessage`. */
+  error: AppError | null;
   account: AccountState;
 }
 
@@ -154,7 +158,7 @@ export interface AccountState {
   last_created: Created | null;
   /** Waiting for the API key of this selection. */
   saving: Selection | null;
-  last_error: string | null;
+  last_error: AppError | null;
 }
 
 export interface ApiSettings {
@@ -178,6 +182,8 @@ export interface Settings {
   api: ApiSettings;
   pue: number | null;
   force_carbon_intensity_g_per_kwh: number | null;
+  /** "system" follows the OS (navigator.languages). */
+  language: LanguageSetting;
 }
 
 // --- History (emissions.csv, see history.rs) --------------------------------
@@ -251,6 +257,8 @@ export const startTracking = (): Promise<void> => invoke("start_tracking");
 export const stopTracking = (): Promise<void> => invoke("stop_tracking");
 export const restartAgent = (): Promise<void> => invoke("restart_agent");
 export const getSettings = (): Promise<Settings> => invoke<Settings>("get_settings");
+/** The OS's preferred languages (BCP 47), the ones the tray follows. */
+export const getSystemLanguages = (): Promise<string[]> => invoke<string[]>("get_system_languages");
 export const saveSettings = (settings: Settings): Promise<Settings> =>
   invoke<Settings>("save_settings", { settings });
 export const openDataFolder = (): Promise<void> => invoke("open_data_folder");
@@ -304,9 +312,10 @@ export function onHistoryChanged(callback: () => void): Promise<UnlistenFn> {
   return listen("history://changed", () => callback());
 }
 
-/** Commands reject with a plain string (see commands.rs); normalise anything else. */
+/**
+ * Commands reject with an `AppError` (a code, see src-tauri/src/error.rs):
+ * the text for the user, in the current language.
+ */
 export function errorMessage(error: unknown): string {
-  if (typeof error === "string") return error;
-  if (error instanceof Error) return error.message;
-  return String(error);
+  return errorText(error);
 }

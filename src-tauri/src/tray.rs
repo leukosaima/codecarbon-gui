@@ -2,7 +2,8 @@
 //!
 //! The menu is rebuilt only when measuring starts or ends (to show or hide
 //! the live-value lines); the rest of the time the existing items are
-//! updated in place.
+//! updated in place. Every refresh gets the language of the current
+//! settings; when it changed, the fixed items are relabelled too.
 
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -11,6 +12,7 @@ use tauri::AppHandle;
 
 use crate::controller;
 use crate::format;
+use crate::i18n::{fill, tr, Key, Lang};
 use crate::state::{Phase, TrackerState};
 
 const TRAY_ID: &str = "codecarbon";
@@ -51,6 +53,7 @@ pub struct Tray {
     /// What is currently displayed, to avoid needless updates.
     shows_live_values: bool,
     shows_active_icon: bool,
+    lang: Lang,
 }
 
 fn item(
@@ -65,22 +68,23 @@ fn item(
 impl Tray {
     /// Create the tray icon. Fails e.g. on Linux desktops without a
     /// StatusNotifier host; the caller logs it and the app keeps running.
-    pub fn create(app: &AppHandle) -> tauri::Result<Self> {
-        let toggle = item(app, ID_TOGGLE, "Start measuring", false)?;
-        let power = item(app, "power", "Power: –", false)?;
-        let co2 = item(app, "co2", "CO₂e: –", false)?;
-        let energy = item(app, "energy", "Energy: –", false)?;
-        let show = item(app, ID_SHOW, "Show CodeCarbon", true)?;
-        let settings = item(app, ID_SETTINGS, "Settings…", true)?;
-        let data = item(app, ID_DATA, "Open data folder", true)?;
-        let quit = item(app, ID_QUIT, "Quit", true)?;
+    pub fn create(app: &AppHandle, lang: Lang) -> tauri::Result<Self> {
+        let t = |key| tr(lang, key);
+        let toggle = item(app, ID_TOGGLE, t(Key::StartMeasuring), false)?;
+        let power = item(app, "power", &fill(t(Key::Power), &["–"]), false)?;
+        let co2 = item(app, "co2", &fill(t(Key::Co2), &["–"]), false)?;
+        let energy = item(app, "energy", &fill(t(Key::Energy), &["–"]), false)?;
+        let show = item(app, ID_SHOW, t(Key::ShowApp), true)?;
+        let settings = item(app, ID_SETTINGS, t(Key::Settings), true)?;
+        let data = item(app, ID_DATA, t(Key::OpenDataFolder), true)?;
+        let quit = item(app, ID_QUIT, t(Key::Quit), true)?;
 
         let tray = Self {
             app: app.clone(),
             icon: TrayIconBuilder::with_id(TRAY_ID)
                 .icon(Image::from_bytes(ICON_IDLE)?)
                 .icon_as_template(cfg!(target_os = "macos"))
-                .tooltip("CodeCarbon — starting…")
+                .tooltip(t(Key::TooltipStarting))
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| on_menu_event(app, event.id().as_ref()))
                 .on_tray_icon_event(on_tray_event)
@@ -95,6 +99,7 @@ impl Tray {
             quit,
             shows_live_values: false,
             shows_active_icon: false,
+            lang,
         };
         // The menu needs the items above, so it is attached after creation.
         tray.icon.set_menu(Some(tray.build_menu(false)?))?;
@@ -119,25 +124,40 @@ impl Tray {
         Ok(menu)
     }
 
-    /// Bring the icon, tooltip and menu in line with `state`.
-    pub fn refresh(&mut self, state: &TrackerState) {
-        if let Err(e) = self.try_refresh(state) {
+    /// Bring the icon, tooltip and menu in line with `state`, in `lang`.
+    pub fn refresh(&mut self, state: &TrackerState, lang: Lang) {
+        if let Err(e) = self.try_refresh(state, lang) {
             log::debug!("tray refresh failed: {e}");
         }
     }
 
-    fn try_refresh(&mut self, state: &TrackerState) -> tauri::Result<()> {
+    /// The items whose text does not depend on the state.
+    fn relabel(&mut self, lang: Lang) -> tauri::Result<()> {
+        self.show.set_text(tr(lang, Key::ShowApp))?;
+        self.settings.set_text(tr(lang, Key::Settings))?;
+        self.data.set_text(tr(lang, Key::OpenDataFolder))?;
+        self.quit.set_text(tr(lang, Key::Quit))?;
+        log::debug!("tray relabelled: {lang:?}");
+        self.lang = lang;
+        Ok(())
+    }
+
+    fn try_refresh(&mut self, state: &TrackerState, lang: Lang) -> tauri::Result<()> {
+        if lang != self.lang {
+            self.relabel(lang)?;
+        }
+        let t = |key| tr(lang, key);
         let measuring = matches!(state.phase, Phase::Running | Phase::Stopping);
 
         // Start/Stop item.
-        let (text, enabled) = match state.phase {
-            Phase::Idle => ("Start measuring", state.agent_ready.is_some()),
-            Phase::Starting => ("Starting…", false),
-            Phase::Running => ("Stop measuring", true),
-            Phase::Stopping => ("Stopping…", false),
-            Phase::AgentError => ("Start measuring", false),
+        let (key, enabled) = match state.phase {
+            Phase::Idle => (Key::StartMeasuring, state.agent_ready.is_some()),
+            Phase::Starting => (Key::Starting, false),
+            Phase::Running => (Key::StopMeasuring, true),
+            Phase::Stopping => (Key::Stopping, false),
+            Phase::AgentError => (Key::StartMeasuring, false),
         };
-        self.toggle.set_text(text)?;
+        self.toggle.set_text(t(key))?;
         self.toggle.set_enabled(enabled)?;
 
         // Live values.
@@ -146,16 +166,15 @@ impl Tray {
         let co2 = latest.map(|m| m.emissions_kg);
         let energy = latest.map(|m| m.energy_kwh.total);
         if measuring {
-            self.power.set_text(format!(
-                "Power: {}",
-                power.map_or("–".into(), format::power)
-            ))?;
+            let value = |v: Option<f64>, f: fn(f64, Lang) -> String| {
+                v.map_or_else(|| "–".to_string(), |v| f(v, lang))
+            };
+            self.power
+                .set_text(fill(t(Key::Power), &[&value(power, format::power)]))?;
             self.co2
-                .set_text(format!("CO₂e: {}", co2.map_or("–".into(), format::co2)))?;
-            self.energy.set_text(format!(
-                "Energy: {}",
-                energy.map_or("–".into(), format::energy)
-            ))?;
+                .set_text(fill(t(Key::Co2), &[&value(co2, format::co2)]))?;
+            self.energy
+                .set_text(fill(t(Key::Energy), &[&value(energy, format::energy)]))?;
         }
         if measuring != self.shows_live_values {
             self.icon.set_menu(Some(self.build_menu(measuring)?))?;
@@ -175,7 +194,7 @@ impl Tray {
         }
 
         // Tooltip (not supported by every Linux desktop: errors are ignored).
-        let tooltip = tooltip_text(state);
+        let tooltip = tooltip_text(state, lang);
         let _ = self.icon.set_tooltip(Some(tooltip));
 
         // macOS: live power next to the icon in the menu bar.
@@ -192,19 +211,24 @@ impl Tray {
 }
 
 /// `CodeCarbon — not measuring` / `CodeCarbon — 23.4 W · 0.84 g CO₂e`.
-pub fn tooltip_text(state: &TrackerState) -> String {
-    match (state.phase, state.latest.as_ref()) {
-        (Phase::Running | Phase::Stopping, Some(m)) => format!(
-            "CodeCarbon — {} · {} CO₂e",
-            format::power(m.power_w.total),
-            format::co2(m.emissions_kg)
-        ),
-        (Phase::Running, None) | (Phase::Starting, _) => "CodeCarbon — starting…".into(),
-        (Phase::Stopping, None) => "CodeCarbon — stopping…".into(),
-        (Phase::AgentError, _) => "CodeCarbon — measurement engine unavailable".into(),
-        (Phase::Idle, _) if state.agent_ready.is_none() => "CodeCarbon — loading…".into(),
-        (Phase::Idle, _) => "CodeCarbon — not measuring".into(),
-    }
+pub fn tooltip_text(state: &TrackerState, lang: Lang) -> String {
+    let key = match (state.phase, state.latest.as_ref()) {
+        (Phase::Running | Phase::Stopping, Some(m)) => {
+            return fill(
+                tr(lang, Key::TooltipLive),
+                &[
+                    &format::power(m.power_w.total, lang),
+                    &format::co2(m.emissions_kg, lang),
+                ],
+            )
+        }
+        (Phase::Running, None) | (Phase::Starting, _) => Key::TooltipStarting,
+        (Phase::Stopping, None) => Key::TooltipStopping,
+        (Phase::AgentError, _) => Key::TooltipUnavailable,
+        (Phase::Idle, _) if state.agent_ready.is_none() => Key::TooltipLoading,
+        (Phase::Idle, _) => Key::TooltipNotMeasuring,
+    };
+    tr(lang, key).to_string()
 }
 
 /// Menu clicks run on the main thread: hand the work to the async runtime.
@@ -246,9 +270,14 @@ mod tests {
     #[test]
     fn tooltips() {
         let mut s = TrackerState::default();
-        assert_eq!(tooltip_text(&s), "CodeCarbon — loading…");
+        assert_eq!(tooltip_text(&s, Lang::En), "CodeCarbon — loading…");
+        assert_eq!(tooltip_text(&s, Lang::Fr), "CodeCarbon — chargement…");
         s.agent_ready = Some(ReadyInfo::default());
-        assert_eq!(tooltip_text(&s), "CodeCarbon — not measuring");
+        assert_eq!(tooltip_text(&s, Lang::En), "CodeCarbon — not measuring");
+        assert_eq!(
+            tooltip_text(&s, Lang::Fr),
+            "CodeCarbon — aucune mesure en cours"
+        );
         s.phase = Phase::Running;
         s.latest = Some(Measurement {
             power_w: Breakdown {
@@ -258,6 +287,16 @@ mod tests {
             emissions_kg: 0.00084,
             ..Default::default()
         });
-        assert_eq!(tooltip_text(&s), "CodeCarbon — 23.4 W · 0.84 g CO₂e");
+        assert_eq!(
+            tooltip_text(&s, Lang::En),
+            "CodeCarbon — 23.4 W · 0.84 g CO₂e"
+        );
+        assert_eq!(
+            tooltip_text(&s, Lang::Fr),
+            "CodeCarbon — 23,4 W · 0,84 g CO₂e"
+        );
+        s.phase = Phase::Stopping;
+        s.latest = None;
+        assert_eq!(tooltip_text(&s, Lang::Fr), "CodeCarbon — arrêt…");
     }
 }

@@ -102,6 +102,34 @@ body {
   border-bottom-color: var(--accent);
 }
 
+/* Tab names never wrap; on a narrow panel (French labels are longer) the
+   tabs get closer instead. */
+.tab {
+  white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+@media (max-width: 380px) {
+  .tabs {
+    gap: 0;
+    padding-inline: 8px;
+  }
+
+  .tab {
+    padding-inline: 8px;
+  }
+
+  /* "0,00286 g" and "CPU 1,6 W · RAM 10,0 W" fit a 340 px panel. */
+  .tiles:not(.tiles-3) .tile {
+    padding-inline: 12px;
+  }
+
+  .tiles:not(.tiles-3) .tile-value {
+    font-size: 23px;
+  }
+}
+
 .content {
   flex: 1;
   overflow-y: auto;
@@ -688,6 +716,14 @@ input[type="checkbox"][role="switch"]:checked::after {
 
 .tiles-3 .tile {
   padding: 10px 10px 8px;
+  /* Labels may take two lines ("Depuis le début" at 340 px): the label
+     grows so the values of the three tiles stay on one line. */
+  display: flex;
+  flex-direction: column;
+}
+
+.tiles-3 .tile-label {
+  flex: 1 0 auto;
 }
 
 .tiles-3 .tile-value {

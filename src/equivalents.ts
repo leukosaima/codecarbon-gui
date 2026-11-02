@@ -4,14 +4,15 @@
  * numbers it returns, with the same number formatting as the rest of the app.
  */
 import type { Equivalent } from "./api";
-import { sig3 } from "./format";
+import { round3, sig3 } from "./format";
+import { n, t } from "./i18n/i18n";
 
 /** "1 hour" / "2.5 hours", then minutes and seconds below an hour. */
 function timeAmount(hours: number): string {
-  if (hours >= 1) return `${sig3(hours)} ${sig3(hours) === "1" ? "hour" : "hours"}`;
+  if (hours >= 1) return n("eq.hours", round3(hours), { value: sig3(hours) });
   const minutes = hours * 60;
-  if (minutes >= 1) return `${sig3(minutes)} min`;
-  return `${sig3(minutes * 60)} s`;
+  if (minutes >= 1) return t("eq.minutes", { value: sig3(minutes) });
+  return t("eq.seconds", { value: sig3(minutes * 60) });
 }
 
 /** The sentence for one equivalent, or null for an unknown key. */
@@ -19,14 +20,14 @@ export function describe(eq: Equivalent): string | null {
   const v = Number.isFinite(eq.value) ? Math.max(0, eq.value) : 0;
   switch (eq.key) {
     case "car_km":
-      return v >= 1 ? `≈ ${sig3(v)} km by car` : `≈ ${sig3(v * 1000)} m by car`;
+      return v >= 1 ? t("eq.car_km", { value: sig3(v) }) : t("eq.car_m", { value: sig3(v * 1000) });
     case "smartphone_charges":
-      if (v >= 1) return `≈ ${sig3(v)} smartphone ${sig3(v) === "1" ? "charge" : "charges"}`;
-      return `≈ ${sig3(v * 100)} % of a smartphone charge`;
+      if (v >= 1) return n("eq.phone", round3(v), { value: sig3(v) });
+      return t("eq.phone_percent", { value: sig3(v * 100) });
     case "led_tv_hours":
-      return `≈ ${timeAmount(v)} of LED TV`;
+      return t("eq.led_tv", { time: timeAmount(v) });
     case "streaming_hours":
-      return `≈ ${timeAmount(v)} of video streaming`;
+      return t("eq.streaming", { time: timeAmount(v) });
     default:
       return null;
   }

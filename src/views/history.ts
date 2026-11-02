@@ -17,6 +17,7 @@ import { barChart } from "../barchart";
 import { h, setText, show, svg } from "../dom";
 import { describe as describeEquivalent, ICONS } from "../equivalents";
 import * as fmt from "../format";
+import { live, liveAttr, n, t, type MessageKey } from "../i18n/i18n";
 
 /** Sessions shown at first, and added by every "Show more". */
 const PAGE = 20;
@@ -25,29 +26,30 @@ const CHART_W = 300;
 const BARS_H = 84;
 const TICKS_H = 16;
 
-export const EMPTY_TEXT = "Your sessions will appear here after you stop a measurement.";
-
 /** A stat tile: CO₂e big, energy and time below. */
-function statTile(label: string): { root: HTMLElement; update: (t: Totals) => void } {
+function statTile(label: MessageKey): { root: HTMLElement; update: (t: Totals) => void } {
   const value = h("div", { class: "tile-value" }, "–");
   const energy = h("div", { class: "tile-sub" });
   const time = h("div", { class: "tile-sub" });
   const root = h(
     "div",
     { class: "tile" },
-    h("div", { class: "tile-label" }, label),
+    h("div", { class: "tile-label" }, live(label)),
     value,
     energy,
     time,
   );
   return {
     root,
-    update(t) {
-      setText(value, fmt.co2(t.emissions_kg));
-      setText(energy, fmt.energy(t.energy_kwh));
-      const sessions = t.sessions === 1 ? "1 session" : `${t.sessions} sessions`;
-      setText(time, t.sessions > 0 ? fmt.durationShort(t.duration_s) : "no session");
-      root.title = `${label}: ${sessions}`;
+    update(totals) {
+      setText(value, fmt.co2(totals.emissions_kg));
+      setText(energy, fmt.energy(totals.energy_kwh));
+      const sessions = n("history.sessions", totals.sessions);
+      setText(
+        time,
+        totals.sessions > 0 ? fmt.durationShort(totals.duration_s) : t("history.no_session"),
+      );
+      root.title = t("history.tile_title", { label: t(label), sessions });
     },
   };
 }
@@ -67,32 +69,39 @@ export class HistoryView {
   private loadSeq = 0;
 
   private readonly error = h("div", { class: "banner", role: "alert" });
-  private readonly csvOff = h(
-    "p",
-    { class: "hint small" },
-    "Keeping a history is turned off in Settings: new sessions are not saved.",
+  private readonly csvOff = h("p", { class: "hint small" }, live("history.csv_off"));
+  private readonly empty = h(
+    "div",
+    { class: "card empty-state" },
+    h("p", {}, live("history.empty")),
   );
-  private readonly empty = h("div", { class: "card empty-state" }, h("p", {}, EMPTY_TEXT));
   private readonly body: HTMLElement;
-  private readonly today = statTile("Today");
-  private readonly week = statTile("This week");
-  private readonly allTime = statTile("All time");
-  private readonly chart = svg("svg", {
-    class: "bars",
-    viewBox: `0 0 ${CHART_W} ${BARS_H + TICKS_H}`,
-    role: "img",
-    "aria-label": "CO₂e per day over the last 30 days",
-  });
+  private readonly today = statTile("history.today");
+  private readonly week = statTile("history.this_week");
+  private readonly allTime = statTile("history.all_time");
+  private readonly chart = liveAttr(
+    svg("svg", {
+      class: "bars",
+      viewBox: `0 0 ${CHART_W} ${BARS_H + TICKS_H}`,
+      role: "img",
+    }),
+    "aria-label",
+    "history.chart_label",
+  );
   private readonly chartMax = h("span", { class: "muted" });
   private readonly chartEmpty = h(
     "p",
     { class: "muted small chart-empty" },
-    "No sessions in the last 30 days.",
+    live("history.chart_empty"),
   );
   private readonly equivalents = h("ul", { class: "equivalents" });
   private readonly sessions = h("ol", { class: "sessions" });
   private readonly sessionsCount = h("span", { class: "muted" });
-  private readonly more = h("button", { class: "btn btn-small more", type: "button" }, "Show more");
+  private readonly more = h(
+    "button",
+    { class: "btn btn-small more", type: "button" },
+    live("history.show_more"),
+  );
   private readonly skipped = h("span", { class: "muted small" });
 
   constructor() {
@@ -100,7 +109,11 @@ export class HistoryView {
       this.shown += PAGE;
       this.renderSessions();
     });
-    const openFolder = h("button", { class: "link", type: "button" }, "Open data folder");
+    const openFolder = h(
+      "button",
+      { class: "link", type: "button" },
+      live("common.open_data_folder"),
+    );
     openFolder.addEventListener("click", () => {
       openDataFolder().catch((e: unknown) => this.showError(errorMessage(e)));
     });
@@ -112,7 +125,12 @@ export class HistoryView {
       h(
         "section",
         { class: "card" },
-        h("div", { class: "card-head" }, h("span", {}, "Last 30 days"), this.chartMax),
+        h(
+          "div",
+          { class: "card-head" },
+          h("span", {}, live("history.last_30_days")),
+          this.chartMax,
+        ),
         this.chart,
         this.chartEmpty,
       ),
@@ -122,16 +140,21 @@ export class HistoryView {
         h(
           "div",
           { class: "card-head" },
-          h("span", {}, "In everyday terms"),
-          h("span", { class: "muted" }, "all time"),
+          h("span", {}, live("history.everyday")),
+          h("span", { class: "muted" }, live("history.everyday_scope")),
         ),
         this.equivalents,
-        h("p", { class: "muted small eq-note" }, "Orders of magnitude, from average factors."),
+        h("p", { class: "muted small eq-note" }, live("history.orders_of_magnitude")),
       ),
       h(
         "section",
         { class: "card" },
-        h("div", { class: "card-head" }, h("span", {}, "Sessions"), this.sessionsCount),
+        h(
+          "div",
+          { class: "card-head" },
+          h("span", {}, live("history.sessions")),
+          this.sessionsCount,
+        ),
         this.sessions,
         this.more,
       ),
@@ -170,6 +193,11 @@ export class HistoryView {
     }
   }
 
+  /** The language changed: render the last data again. */
+  relocalize(): void {
+    if (this.data) this.render(this.data);
+  }
+
   private showError(message: string): void {
     setText(this.error, message);
     show(this.error, true);
@@ -182,10 +210,7 @@ export class HistoryView {
     show(this.empty, !hasData);
     show(this.body, hasData);
     const skipped = data.skipped_rows;
-    setText(
-      this.skipped,
-      skipped > 0 ? `${skipped} ${skipped === 1 ? "row" : "rows"} could not be read` : "",
-    );
+    setText(this.skipped, skipped > 0 ? n("history.skipped", skipped) : "");
     this.skipped.title = skipped > 0 ? data.path : "";
     if (!hasData) return;
 
@@ -209,7 +234,7 @@ export class HistoryView {
       CHART_W,
       BARS_H,
     );
-    setText(this.chartMax, max > 0 ? `max ${fmt.co2(max)} / day` : "");
+    setText(this.chartMax, max > 0 ? t("history.chart_max", { value: fmt.co2(max) }) : "");
     show(this.chartEmpty, max === 0);
     const last = daily.length - 1;
     const nodes: SVGElement[] = [
@@ -220,9 +245,10 @@ export class HistoryView {
       if (!bar) return;
       const g = svg("g", { class: i === last ? "bar today" : "bar" });
       const title = svg("title");
-      const when = `${fmt.formatDay(day.date)}${i === last ? " (today)" : ""}`;
+      const dayText = fmt.formatDay(day.date);
+      const when = i === last ? t("history.day_today", { day: dayText }) : dayText;
       title.textContent =
-        `${when}: ${fmt.co2(day.emissions_kg)} CO₂e` +
+        t("history.day_title", { day: when, co2: fmt.co2(day.emissions_kg) }) +
         (day.duration_s > 0
           ? ` · ${fmt.energy(day.energy_kwh)} · ${fmt.durationShort(day.duration_s)}`
           : "");
@@ -263,7 +289,7 @@ export class HistoryView {
     const visible = all.slice(0, this.shown);
     this.sessions.replaceChildren(...visible.map(sessionRow));
     const total = this.data?.summary.all_time.sessions ?? all.length;
-    setText(this.sessionsCount, total === 1 ? "1 session" : `${total} sessions`);
+    setText(this.sessionsCount, n("history.sessions", total));
     show(this.more, all.length > visible.length);
   }
 }
@@ -274,7 +300,12 @@ function sessionRow(s: HistorySession): HTMLElement {
     .join(" · ");
   return h(
     "li",
-    { title: `${s.project_name || "session"} · average ${fmt.power(s.avg_power_w)}` },
+    {
+      title: t("history.session_title", {
+        project: s.project_name || t("history.session"),
+        power: fmt.power(s.avg_power_w),
+      }),
+    },
     h(
       "div",
       { class: "session-main" },
