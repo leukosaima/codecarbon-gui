@@ -2,11 +2,11 @@
 
 ## v0.1 — "it measures" (this iteration)
 - [x] Design, protocol, stack decision
-- [ ] Python sidecar wrapping CodeCarbon, tested, frozen with PyInstaller
-- [ ] Tauri tray app: start/stop, live power / energy / CO₂e, session summary
-- [ ] Settings: interval, country, CSV history, start on launch, launch at login
+- [x] Python sidecar wrapping CodeCarbon, tested, frozen with PyInstaller
+- [x] Tauri tray app: start/stop, live power / energy / CO₂e, session summary
+- [x] Settings: interval, country, CSV history, start on launch, launch at login
 - [ ] Installers for Windows (.exe/.msi), macOS (.dmg, Intel + Apple Silicon), Linux (.AppImage/.deb/.rpm) built by CI
-- [ ] Installation guide for non-technical users
+- [x] Installation guide for non-technical users
 
 ## v0.2 — "share it"
 - **CodeCarbon API login.** Device-code / browser flow against the CodeCarbon

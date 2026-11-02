@@ -38,7 +38,7 @@ def emit(event: str, **fields) -> None:
     """Write one event as a single JSON line on stdout."""
     payload = {"event": event, "ts": now_iso(), **fields}
     with _stdout_lock:
-        sys.stdout.write(json.dumps(payload) + "\n")
+        sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
         sys.stdout.flush()
 
 

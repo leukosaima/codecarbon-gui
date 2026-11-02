@@ -82,5 +82,6 @@ system exposes them. See the
 ## Where is my data?
 
 Every session is appended to `emissions.csv` in the app's data folder
+(a `measurements` folder inside the app's data directory)
 (menu → **Open data folder**). It is the same CSV format the CodeCarbon
 Python package writes.

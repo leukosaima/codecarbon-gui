@@ -1,0 +1,316 @@
+//! Spawns and supervises the `codecarbon-agent` sidecar.
+//!
+//! * The agent is started with tauri-plugin-shell's `sidecar()` API, which
+//!   finds the binary bundled through `bundle.externalBin`.
+//! * Each stdout line is parsed into an [`AgentEvent`] and handed to the
+//!   [`SignalHandler`] given to [`AgentHandle::new`]. Stderr lines are logged
+//!   at `debug` level.
+//! * Commands ([`AgentCommand`]) are written to the agent's stdin.
+//! * If the process exits while we did not ask it to, it is restarted after
+//!   1 s, 3 s, then 10 s. After the third failure in a row the handler gets
+//!   `Exited { restarting: false }` and the UI offers "Retry"
+//!   ([`AgentHandle::restart`]).
+
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
+
+use tauri::async_runtime;
+use tauri::AppHandle;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+use tauri_plugin_shell::ShellExt;
+
+use crate::protocol::{AgentCommand, AgentEvent, ReadyInfo, PROTOCOL_VERSION};
+
+/// Name of the sidecar, as copied next to the app executable by tauri-build
+/// (the `binaries/` prefix and the target triple are stripped).
+pub const SIDECAR_NAME: &str = "codecarbon-agent";
+
+/// Delays before restart attempts 1, 2 and 3.
+const BACKOFF: [Duration; 3] = [
+    Duration::from_secs(1),
+    Duration::from_secs(3),
+    Duration::from_secs(10),
+];
+
+/// A process that ran at least this long resets the failure counter.
+const STABLE_AFTER: Duration = Duration::from_secs(60);
+
+/// What the supervisor reports to the rest of the app.
+#[derive(Debug, Clone)]
+pub enum AgentSignal {
+    /// A parsed stdout line.
+    Event(Box<AgentEvent>),
+    /// The process exited without being asked to.
+    Exited { restarting: bool, detail: String },
+}
+
+/// Callback receiving every [`AgentSignal`] (called from an async task).
+pub type SignalHandler = Arc<dyn Fn(&AppHandle, AgentSignal) + Send + Sync>;
+
+/// Errors when talking to the agent.
+#[derive(Debug, thiserror::Error)]
+pub enum AgentError {
+    #[error("the measurement engine is not running")]
+    NotRunning,
+    #[error("cannot write to the measurement engine: {0}")]
+    Write(String),
+}
+
+#[derive(Default)]
+struct Inner {
+    /// The live process, if any.
+    child: Option<CommandChild>,
+    /// Info from the last `ready` event of the live process.
+    ready: Option<ReadyInfo>,
+    /// Incremented by each (re)start; an old supervisor whose generation is
+    /// not current any more stops silently.
+    generation: u64,
+    /// Set when the app quits: exits are expected, no restart.
+    shutting_down: bool,
+}
+
+/// Cheap-to-clone handle on the supervised agent.
+#[derive(Clone)]
+pub struct AgentHandle {
+    inner: Arc<Mutex<Inner>>,
+    app: AppHandle,
+    handler: SignalHandler,
+}
+
+impl AgentHandle {
+    /// Create the handle. Nothing is spawned until [`AgentHandle::start`].
+    pub fn new(app: AppHandle, handler: SignalHandler) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(Inner::default())),
+            app,
+            handler,
+        }
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Inner> {
+        // A panic while holding the lock must not take the whole app down.
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Spawn the agent and supervise it in the background.
+    pub fn start(&self) {
+        let generation = {
+            let mut inner = self.lock();
+            inner.generation += 1;
+            inner.shutting_down = false;
+            inner.generation
+        };
+        let this = self.clone();
+        async_runtime::spawn(async move { this.supervise(generation).await });
+    }
+
+    /// Kill the current process (if any) and start again with a fresh
+    /// failure counter. Used by the "Retry" button.
+    pub fn restart(&self) {
+        let old = {
+            let mut inner = self.lock();
+            inner.generation += 1; // makes the current supervisor stale
+            inner.ready = None;
+            inner.child.take()
+        };
+        if let Some(child) = old {
+            kill_child(child);
+        }
+        self.start();
+    }
+
+    /// Write one command on the agent's stdin.
+    pub fn send(&self, cmd: &AgentCommand) -> Result<(), AgentError> {
+        let line = cmd.to_line();
+        log::debug!("→ agent: {}", line.trim_end());
+        let mut inner = self.lock();
+        let child = inner.child.as_mut().ok_or(AgentError::NotRunning)?;
+        child
+            .write(line.as_bytes())
+            .map_err(|e| AgentError::Write(e.to_string()))
+    }
+
+    /// Info from the agent's `ready` event, once received.
+    pub fn ready(&self) -> Option<ReadyInfo> {
+        self.lock().ready.clone()
+    }
+
+    /// `true` while the agent process is alive.
+    pub fn is_alive(&self) -> bool {
+        self.lock().child.is_some()
+    }
+
+    /// From now on, exits are expected and the agent is not restarted.
+    pub fn begin_shutdown(&self) {
+        self.lock().shutting_down = true;
+    }
+
+    /// Kill the process right away (no-op if it is not running).
+    pub fn kill(&self) {
+        let child = {
+            let mut inner = self.lock();
+            inner.shutting_down = true;
+            inner.child.take()
+        };
+        if let Some(child) = child {
+            kill_child(child);
+        }
+    }
+
+    fn is_current(&self, generation: u64) -> bool {
+        let inner = self.lock();
+        inner.generation == generation && !inner.shutting_down
+    }
+
+    /// Spawn → wait for exit → maybe restart, until told to stop.
+    async fn supervise(&self, generation: u64) {
+        let mut failures = 0usize;
+        loop {
+            let started = Instant::now();
+            let detail = self.run_once(generation).await;
+            if !self.is_current(generation) {
+                log::info!("agent exited ({detail}); not restarting (quit or restart requested)");
+                return;
+            }
+            if started.elapsed() >= STABLE_AFTER {
+                failures = 0;
+            }
+            let restarting = failures < BACKOFF.len();
+            log::warn!(
+                "agent exited unexpectedly ({detail}); {}",
+                if restarting {
+                    "restarting"
+                } else {
+                    "giving up"
+                }
+            );
+            (self.handler)(
+                &self.app,
+                AgentSignal::Exited {
+                    restarting,
+                    detail: detail.clone(),
+                },
+            );
+            if !restarting {
+                return;
+            }
+            tokio::time::sleep(BACKOFF[failures]).await;
+            failures += 1;
+            if !self.is_current(generation) {
+                return;
+            }
+        }
+    }
+
+    /// Run the agent once; returns a description of how it ended.
+    async fn run_once(&self, generation: u64) -> String {
+        let command = match self.app.shell().sidecar(SIDECAR_NAME) {
+            Ok(c) => c,
+            Err(e) => return format!("cannot locate {SIDECAR_NAME}: {e}"),
+        };
+        // A process group lets us kill the PyInstaller bootloader *and* the
+        // Python process it starts; kill_on_drop is a safety net.
+        let command = command.set_process_group(true).kill_on_drop(true);
+        let (mut rx, child) = match command.spawn() {
+            Ok(pair) => pair,
+            Err(e) => return format!("cannot start {SIDECAR_NAME}: {e}"),
+        };
+        log::info!("agent spawned (pid {})", child.pid());
+        {
+            let mut inner = self.lock();
+            if inner.generation != generation {
+                drop(inner);
+                kill_child(child);
+                return "superseded by a restart".to_string();
+            }
+            inner.child = Some(child);
+            inner.ready = None;
+        }
+
+        let mut detail = "the process exited".to_string();
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(bytes) => {
+                    for line in String::from_utf8_lossy(&bytes).lines() {
+                        self.handle_line(generation, line);
+                    }
+                }
+                CommandEvent::Stderr(bytes) => {
+                    let text = String::from_utf8_lossy(&bytes);
+                    let text = text.trim_end();
+                    if !text.is_empty() {
+                        log::debug!("agent stderr: {text}");
+                    }
+                }
+                CommandEvent::Error(e) => {
+                    log::warn!("agent I/O error: {e}");
+                    detail = e;
+                }
+                CommandEvent::Terminated(payload) => {
+                    detail = match (payload.code, payload.signal) {
+                        (Some(code), _) => format!("exit code {code}"),
+                        (None, Some(signal)) => format!("killed by signal {signal}"),
+                        (None, None) => "terminated".to_string(),
+                    };
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        let mut inner = self.lock();
+        if inner.generation == generation {
+            inner.child = None;
+            inner.ready = None;
+        }
+        detail
+    }
+
+    /// Parse one stdout line and forward it.
+    fn handle_line(&self, generation: u64, line: &str) {
+        let line = line.trim();
+        if line.is_empty() {
+            return;
+        }
+        let event = match AgentEvent::parse(line) {
+            Ok(event) => event,
+            Err(e) => {
+                log::warn!("ignoring unparseable agent line ({e}): {line}");
+                return;
+            }
+        };
+        log::debug!("← agent: {line}");
+        {
+            let mut inner = self.lock();
+            if inner.generation != generation {
+                return; // output of a process we already replaced
+            }
+            if let AgentEvent::Ready(info) = &event {
+                if info.protocol_version != PROTOCOL_VERSION {
+                    log::warn!(
+                        "agent speaks protocol v{}, this app expects v{PROTOCOL_VERSION}",
+                        info.protocol_version
+                    );
+                }
+                log::info!(
+                    "agent ready: agent {} / codecarbon {} / python {}",
+                    info.agent_version,
+                    info.codecarbon_version,
+                    info.python_version
+                );
+                inner.ready = Some(info.clone());
+            }
+        }
+        (self.handler)(&self.app, AgentSignal::Event(Box::new(event)));
+    }
+}
+
+/// Kill a child without blocking the caller (`CommandChild::kill` waits).
+fn kill_child(child: CommandChild) {
+    std::thread::spawn(move || {
+        let pid = child.pid();
+        if let Err(e) = child.kill() {
+            log::debug!("killing agent pid {pid}: {e}");
+        }
+    });
+}

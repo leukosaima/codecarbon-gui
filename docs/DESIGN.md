@@ -100,12 +100,13 @@ contributors can follow the Rust and TS parts.
   * **Settings…**
   * **Open data folder**
   * **Quit**
-* Left click opens/toggles the panel; right click (or left on macOS when the
-  panel is already positioned) opens the menu.
+* Left click opens/toggles the panel; right click opens the menu. On Linux
+  (libayatana-appindicator) tray click events are not delivered, so the panel
+  is opened through the menu's **Show CodeCarbon** item.
 
 ### 3.3 Panel (WebView)
 
-A single ~400 × 560 px window, hidden instead of closed, positioned next to the
+A single ~400 × 600 px window, hidden instead of closed, positioned next to the
 tray icon when opened from it. Three views, switched by a top tab bar:
 
 * **Dashboard** — big Start/Stop button; live tiles for Power (with CPU/GPU/RAM
@@ -126,7 +127,8 @@ modules (`api.ts`, `format.ts`, `views/*.ts`).
 ### 3.4 Data & privacy
 
 * Settings: `<app config dir>/settings.json`.
-* History: `<app data dir>/emissions.csv` written by CodeCarbon itself.
+* History: `<app data dir>/measurements/emissions.csv`, one row per session,
+  written with CodeCarbon's own CSV output.
 * Network: none unless the user leaves country on "detect from IP" (CodeCarbon
   calls its geolocation endpoint once per start) or enables API upload.
 

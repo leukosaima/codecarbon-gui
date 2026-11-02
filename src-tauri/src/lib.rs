@@ -1,0 +1,180 @@
+//! CodeCarbon desktop app: a tray icon + small panel driving the
+//! `codecarbon-agent` Python sidecar.
+//!
+//! Module map (see docs/DESIGN.md §3):
+//! * [`protocol`]   – JSON-lines types exchanged with the agent
+//! * [`agent`]      – spawns / supervises the agent process
+//! * [`state`]      – `TrackerState`, the single source of truth for the UI
+//! * [`settings`]   – user settings (JSON file)
+//! * [`controller`] – actions shared by the tray and the panel
+//! * [`tray`]       – tray icon, menu, tooltip
+//! * [`commands`]   – `#[tauri::command]` API for the panel
+//! * [`format`]     – number formatting for the tray
+
+pub mod agent;
+pub mod commands;
+pub mod controller;
+pub mod format;
+pub mod protocol;
+pub mod settings;
+pub mod state;
+pub mod tray;
+
+use std::sync::Arc;
+
+use tauri::{App, Manager, RunEvent, WindowEvent};
+
+use crate::agent::AgentHandle;
+use crate::controller::AppCore;
+use crate::settings::Settings;
+
+/// Entry point (called by `main.rs`).
+pub fn run() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    log::info!("CodeCarbon {} starting", env!("CARGO_PKG_VERSION"));
+
+    let app = tauri::Builder::default()
+        // Must be the first plugin: a second launch just shows the panel.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            controller::spawn(app, |app| controller::show_panel(app, None));
+        }))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_positioner::init())
+        .invoke_handler(tauri::generate_handler![
+            commands::get_state,
+            commands::start_tracking,
+            commands::stop_tracking,
+            commands::restart_agent,
+            commands::get_settings,
+            commands::save_settings,
+            commands::open_data_folder,
+            commands::open_url,
+            commands::quit_app,
+        ])
+        .setup(|app| {
+            setup(app)?;
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing the panel hides it; the app keeps running in the tray.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
+        .build(tauri::generate_context!());
+
+    let app = match app {
+        Ok(app) => app,
+        Err(e) => {
+            log::error!("cannot start the application: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    app.run(|app, event| {
+        let Some(core) = app.try_state::<AppCore>() else {
+            return;
+        };
+        match event {
+            // Any exit request that did not come from our own Quit flow (e.g.
+            // Cmd+Q, logout): run the graceful quit, which calls `exit(0)` again.
+            RunEvent::ExitRequested { api, .. } if !core.is_quitting() => {
+                api.prevent_exit();
+                controller::quit(app);
+            }
+            RunEvent::Exit => core.agent.kill(),
+            _ => {}
+        }
+    });
+}
+
+/// Load settings, register shared state, create the tray, spawn the agent.
+fn setup(app: &mut App) -> anyhow::Result<()> {
+    // No Dock icon: this is a menu-bar app.
+    #[cfg(target_os = "macos")]
+    app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+    let handle = app.handle().clone();
+    let config_dir = app.path().app_config_dir()?;
+    // CodeCarbon's CSV goes in a `measurements` sub-folder: the app data dir
+    // itself also holds the WebView's caches, which users should not see
+    // when they click "Open data folder".
+    let data_dir = app.path().app_data_dir()?.join("measurements");
+    let settings_path = settings::settings_path(&config_dir);
+    let settings = Settings::load(&settings_path);
+    log::info!("settings: {}", settings_path.display());
+    log::info!("data folder: {}", data_dir.display());
+    if let Err(e) = std::fs::create_dir_all(&data_dir) {
+        log::warn!("cannot create {}: {e}", data_dir.display());
+    }
+
+    let launch_at_login = settings.launch_at_login;
+    let agent = AgentHandle::new(handle.clone(), Arc::new(controller::on_agent_signal));
+    app.manage(AppCore::new(settings, settings_path, data_dir, agent));
+
+    // A missing tray (e.g. a Linux desktop without StatusNotifier support)
+    // must not prevent the app from running.
+    match tray::Tray::create(&handle) {
+        Ok(tray) => {
+            *app.state::<AppCore>()
+                .tray
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some(tray)
+        }
+        Err(e) => log::warn!("cannot create the tray icon: {e}"),
+    }
+
+    // Keep the OS login item in sync with the setting (e.g. after reinstall).
+    if launch_at_login {
+        if let Err(e) = commands::apply_launch_at_login(&handle, true) {
+            log::warn!("cannot enable launch at login: {e}");
+        }
+    }
+
+    app.state::<AppCore>().agent.start();
+
+    // Developer convenience (and desktops without a tray): show the panel
+    // right away instead of starting hidden.
+    if std::env::var_os("CODECARBON_SHOW_PANEL").is_some() {
+        controller::spawn(&handle, |app| controller::show_panel(app, None));
+    }
+    #[cfg(unix)]
+    quit_on_signals(handle);
+    Ok(())
+}
+
+/// SIGTERM (logout, `kill`) and SIGINT (Ctrl+C in a terminal) run the same
+/// graceful quit as the tray's Quit item, so the measurement is stopped and
+/// saved. A second signal exits immediately.
+#[cfg(unix)]
+fn quit_on_signals(app: tauri::AppHandle) {
+    use tokio::signal::unix::{signal, SignalKind};
+    tauri::async_runtime::spawn(async move {
+        let (Ok(mut term), Ok(mut int)) = (
+            signal(SignalKind::terminate()),
+            signal(SignalKind::interrupt()),
+        ) else {
+            log::warn!("cannot install signal handlers");
+            return;
+        };
+        for attempt in 0.. {
+            tokio::select! {
+                _ = term.recv() => {}
+                _ = int.recv() => {}
+            }
+            if attempt > 0 {
+                log::warn!("second signal: exiting now");
+                app.state::<AppCore>().agent.kill();
+                std::process::exit(130);
+            }
+            log::info!("signal received: quitting");
+            controller::quit(&app);
+        }
+    });
+}

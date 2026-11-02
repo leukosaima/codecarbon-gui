@@ -45,7 +45,8 @@ npm run tauri dev
 ```
 
 The window stays hidden at start-up (it is a tray app): click the tray icon.
-Set `RUST_LOG=debug` to see the sidecar's events.
+Set `RUST_LOG=debug` to see the sidecar's events, and `CODECARBON_SHOW_PANEL=1`
+to show the panel immediately (handy on desktops without a tray).
 
 ## Tests
 

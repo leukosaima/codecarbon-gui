@@ -1,0 +1,138 @@
+//! Human-friendly number formatting for the tray (tooltip, menu, macOS title).
+//!
+//! The panel uses the same rules, implemented in `src/format.ts`; keep both in
+//! sync (they share the same test cases).
+
+/// Placeholder shown for values that are not finite numbers.
+const DASH: &str = "–";
+
+/// Format `x` with at most 3 significant digits, trailing zeros removed.
+///
+/// `0.8432 → "0.843"`, `12.345 → "12.3"`, `123.4 → "123"`, `0.84 → "0.84"`.
+/// Values smaller than 1e-6 are shown as `"0"`.
+pub fn sig3(x: f64) -> String {
+    if !x.is_finite() {
+        return DASH.to_string();
+    }
+    if x.abs() < 1e-6 {
+        return "0".to_string();
+    }
+    let magnitude = x.abs().log10().floor() as i32;
+    let decimals = (2 - magnitude).clamp(0, 6) as usize;
+    let s = format!("{x:.decimals$}");
+    if s.contains('.') {
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        s
+    }
+}
+
+/// Power in watts, one decimal: `"23.4 W"`.
+pub fn power(watts: f64) -> String {
+    if !watts.is_finite() {
+        return DASH.to_string();
+    }
+    format!("{watts:.1} W")
+}
+
+/// Energy (input in kWh): `"12.30 Wh"` below 1000 Wh, then `"1.20 kWh"`.
+pub fn energy(kwh: f64) -> String {
+    if !kwh.is_finite() {
+        return DASH.to_string();
+    }
+    let wh = kwh * 1000.0;
+    if wh.abs() < 999.995 {
+        format!("{wh:.2} Wh")
+    } else {
+        format!("{kwh:.2} kWh")
+    }
+}
+
+/// CO₂-equivalent (input in kg): `"0.84 g"` (3 significant digits) below
+/// 1 kg, then `"1.2 kg"`.
+pub fn co2(kg: f64) -> String {
+    if !kg.is_finite() {
+        return DASH.to_string();
+    }
+    let g = kg * 1000.0;
+    if g.abs() < 999.5 {
+        format!("{} g", sig3(g))
+    } else {
+        format!("{} kg", sig3(kg))
+    }
+}
+
+/// Duration as `hh:mm:ss` (hours may exceed 24).
+pub fn duration(seconds: f64) -> String {
+    if !seconds.is_finite() || seconds < 0.0 {
+        return "00:00:00".to_string();
+    }
+    let s = seconds.floor() as u64;
+    format!("{:02}:{:02}:{:02}", s / 3600, (s / 60) % 60, s % 60)
+}
+
+/// Grid carbon intensity as an integer: `"56 g/kWh"`.
+pub fn intensity(g_per_kwh: f64) -> String {
+    if !g_per_kwh.is_finite() {
+        return DASH.to_string();
+    }
+    format!("{g_per_kwh:.0} g/kWh")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn significant_digits() {
+        assert_eq!(sig3(0.84), "0.84");
+        assert_eq!(sig3(0.8432), "0.843");
+        assert_eq!(sig3(12.345), "12.3");
+        assert_eq!(sig3(123.4), "123");
+        assert_eq!(sig3(5.0), "5");
+        assert_eq!(sig3(0.0), "0");
+        assert_eq!(sig3(0.000123), "0.000123");
+        assert_eq!(sig3(1e-9), "0");
+        assert_eq!(sig3(f64::NAN), "–");
+    }
+
+    #[test]
+    fn power_has_one_decimal() {
+        assert_eq!(power(23.44), "23.4 W");
+        assert_eq!(power(0.0), "0.0 W");
+        assert_eq!(power(105.0), "105.0 W");
+    }
+
+    #[test]
+    fn energy_switches_to_kwh() {
+        assert_eq!(energy(0.0123), "12.30 Wh");
+        assert_eq!(energy(0.0), "0.00 Wh");
+        assert_eq!(energy(0.999), "999.00 Wh");
+        assert_eq!(energy(1.2), "1.20 kWh");
+        assert_eq!(energy(0.999999), "1.00 kWh");
+    }
+
+    #[test]
+    fn co2_switches_to_kg() {
+        assert_eq!(co2(0.00084), "0.84 g");
+        assert_eq!(co2(0.0123456), "12.3 g");
+        assert_eq!(co2(0.5), "500 g");
+        assert_eq!(co2(0.9996), "1 kg");
+        assert_eq!(co2(1.234), "1.23 kg");
+        assert_eq!(co2(0.0), "0 g");
+    }
+
+    #[test]
+    fn durations() {
+        assert_eq!(duration(0.0), "00:00:00");
+        assert_eq!(duration(61.9), "00:01:01");
+        assert_eq!(duration(3600.0 * 25.0 + 5.0), "25:00:05");
+        assert_eq!(duration(-1.0), "00:00:00");
+    }
+
+    #[test]
+    fn intensities() {
+        assert_eq!(intensity(56.4), "56 g/kWh");
+        assert_eq!(intensity(f64::INFINITY), "–");
+    }
+}
