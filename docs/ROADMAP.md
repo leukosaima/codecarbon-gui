@@ -9,12 +9,11 @@
 - [x] Installation guide for non-technical users
 
 ## v0.2 — "share it"
-- **CodeCarbon API login.** Device-code / browser flow against the CodeCarbon
-  dashboard, storing the token in the OS keychain (`keyring` crate), so the
-  user never pastes an API key. Then choose organisation → project →
-  experiment from drop-downs instead of typing an experiment id.
-- **Upload sessions** to the API (already plumbed in the protocol through
-  `save_to_api`, `api_key`, `experiment_id`).
+- **CodeCarbon dashboard account** (in progress): browser login (OpenID
+  Connect + PKCE, same flow as `codecarbon login`), choose or create
+  organisation → project → experiment from drop-downs, project API key
+  fetched automatically, sessions uploaded through `save_to_api`.
+  Later: keep the tokens in the OS keychain instead of a 0600 file.
 - **History view**: read `emissions.csv`, show past sessions, totals per
   day/week, and "equivalents" (km by car, smartphone charges…).
 - Notifications: "You emitted X g today".

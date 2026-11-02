@@ -7,7 +7,7 @@ lines go to **stderr**. Unknown fields must be ignored by both sides so the two
 halves can evolve independently.
 
 Version negotiation: the `ready` event carries `protocol_version` (integer,
-currently `1`).
+currently `2`, see the end of this document for what v2 adds).
 
 ## Commands (stdin, app → agent)
 
@@ -144,3 +144,64 @@ codecarbon-agent --version     # prints "codecarbon-agent 0.1.0 (codecarbon 3.3.
 codecarbon-agent --selftest    # starts a 3 s run with the real tracker, prints the
                                # events, exits 0 on success. Used by CI on every OS.
 ```
+
+## Protocol version 2: CodeCarbon dashboard account (API)
+
+Added so the app can connect to the free CodeCarbon dashboard
+(<https://dashboard.codecarbon.io>) the same way `codecarbon login` /
+`codecarbon config` do: an OpenID Connect login (authorization code + PKCE
+against `https://authentication.codecarbon.io/realms/codecarbon`, public
+client `codecarbon-cli`, redirect `http://localhost:8090/callback`, scope
+`openid offline_access`), then the REST API at `https://api.codecarbon.io`
+with the bearer token to pick or create an organisation → project →
+experiment, and finally a **project API key** (`POST /projects/{id}/api-tokens`)
+that the tracker uses through `save_to_api` + `api_key` + `experiment_id`.
+
+The agent is told where to keep the credentials with a CLI flag:
+`codecarbon-agent --credentials <path-to-credentials.json>` (created with
+mode 0600; without the flag no login is possible and `auth_*` commands reply
+`error(auth_unavailable)`). The access/refresh tokens never leave the agent:
+the app only ever sees the user's display name and e-mail.
+
+`ready.protocol_version` is now `2`.
+
+### Commands
+
+| `cmd` | Fields | Reply |
+| --- | --- | --- |
+| `auth_start` | – | `auth_url` at once (the app opens it in the browser), then `auth_result` when the browser comes back or after 5 min. A second `auth_start` while one is pending cancels the first (`auth_result` with `cancelled`). |
+| `auth_cancel` | – | `auth_result` with `cancelled: true` if one was pending, else nothing. |
+| `auth_status` | – | `auth_status`. Validates / refreshes the stored token; never opens a browser. |
+| `auth_logout` | – | deletes the credentials file, then `auth_status` (`logged_in: false`). |
+| `api_catalog` | – | `api_catalog`: every organisation the user belongs to with its projects and their experiments. |
+| `api_create` | `kind`: `organization` \| `project` \| `experiment`, `name`, optional `description`, `parent_id` (organisation id for a project, project id for an experiment; omitted for an organisation) | `api_created`. Experiments are created with `on_cloud: false` and no country override (the tracker fills location in). |
+| `api_key` | `project_id` | `api_key`: a fresh API key for the project (the app stores it in its settings and passes it as `config.api_key`). |
+
+All `auth_*` / `api_*` commands are allowed while a measurement is running.
+They never block the measurement loop (run on their own thread).
+
+### Events
+
+```json
+{"event":"auth_url","ts":"…","url":"https://authentication.codecarbon.io/…"}
+{"event":"auth_result","ts":"…","ok":true,"user":{"name":"Ada","email":"ada@example.org"}}
+{"event":"auth_result","ts":"…","ok":false,"cancelled":false,"message":"Authorization failed: access_denied"}
+{"event":"auth_status","ts":"…","logged_in":true,"user":{"name":"…","email":"…"},"api_endpoint":"https://api.codecarbon.io"}
+{"event":"api_catalog","ts":"…","organizations":[{"id":"…","name":"…","projects":[{"id":"…","name":"…","experiments":[{"id":"…","name":"…"}]}]}]}
+{"event":"api_created","ts":"…","kind":"project","item":{"id":"…","name":"…","parent_id":"…"}}
+{"event":"api_key","ts":"…","project_id":"…","api_key":"…"}
+```
+`user` is taken from the ID token / `GET /auth/check` (fields may be `null`).
+
+### Errors
+
+New codes: `auth_unavailable` (no `--credentials` path), `not_logged_in`
+(`api_*` without a valid session; the app should show the sign-in button),
+`api_error` (HTTP / network failure; `message` holds the API's text),
+`auth_failed` (login flow failed; carried inside `auth_result`, not as an
+`error` event).
+
+### Environment overrides (for staging servers)
+
+`CODECARBON_API_ENDPOINT`, `AUTH_SERVER_WELL_KNOWN`, `AUTH_CLIENT_ID` are
+honoured by the agent, with the production defaults above.
