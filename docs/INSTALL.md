@@ -77,6 +77,27 @@ gh attestation verify CodeCarbon_0.1.0_aarch64.dmg -R mlco2/codecarbon-gui
 See [SECURITY.md](../SECURITY.md) for what the app does and does not do on
 your computer.
 
+## Connecting to the CodeCarbon dashboard (optional)
+
+*Settings → CodeCarbon dashboard → Sign in or create an account* opens your
+browser on the free CodeCarbon dashboard. Once signed in, pick (or create)
+an organisation, a project and an experiment, and switch on *Upload my
+sessions*. Every session you stop from then on appears on
+<https://dashboard.codecarbon.io>. You can sign out at any time; nothing
+is uploaded unless this is switched on.
+
+## History
+
+The *History* tab shows your totals for today, this week and all time, a
+30-day chart, everyday equivalents (kilometres by car, smartphone charges…)
+and the list of past sessions. It reads the same `emissions.csv` file
+CodeCarbon writes.
+
+## Language
+
+The app follows your system language (English or French). Change it in
+*Settings → Language*.
+
 ## What do the numbers mean?
 
 * **Power (W)** — how much electricity your machine is drawing right now,

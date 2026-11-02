@@ -1,39 +1,64 @@
 /**
  * Human-friendly number formatting. Same rules (and test cases) as
  * src-tauri/src/format.rs, which formats the tray; keep both in sync.
+ *
+ * Numbers follow the current language (`Intl.NumberFormat`, no grouping):
+ * "23.4 W" in English, "23,4 W" in French, where the unit is also joined
+ * by a non-breaking space. Every function takes an optional BCP 47 tag
+ * (default: the current language, see i18n.ts).
  */
 import type { Hardware, Location } from "./api";
+import { formatNumber, intlLocale, t } from "./i18n/i18n";
 
 const DASH = "–";
+const NBSP = "\u00a0";
+
+/** "23.4" + "W": a plain space in English, a non-breaking one in French. */
+function withUnit(value: string, unit: string, locale: string): string {
+  return `${value}${/^fr\b/i.test(locale) ? NBSP : " "}${unit}`;
+}
+
+/** Decimals for 3 significant digits (0–6). */
+function sig3Decimals(x: number): number {
+  const magnitude = Math.floor(Math.log10(Math.abs(x)));
+  return Math.min(6, Math.max(0, 2 - magnitude));
+}
 
 /** At most 3 significant digits, trailing zeros removed. Below 1e-6 → "0". */
-export function sig3(x: number): string {
+export function sig3(x: number, locale: string = intlLocale()): string {
   if (!Number.isFinite(x)) return DASH;
   if (Math.abs(x) < 1e-6) return "0";
-  const magnitude = Math.floor(Math.log10(Math.abs(x)));
-  const decimals = Math.min(6, Math.max(0, 2 - magnitude));
-  const s = x.toFixed(decimals);
-  return s.includes(".") ? s.replace(/0+$/, "").replace(/\.$/, "") : s;
+  return formatNumber(x, 0, sig3Decimals(x), locale);
+}
+
+/** The number `sig3` shows, as a number (for plurals: "1 hour" / "1.5 hours"). */
+export function round3(x: number): number {
+  if (!Number.isFinite(x) || Math.abs(x) < 1e-6) return 0;
+  return Number(x.toFixed(sig3Decimals(x)));
 }
 
 /** Watts with one decimal: "23.4 W". */
-export function power(watts: number): string {
+export function power(watts: number, locale: string = intlLocale()): string {
   if (!Number.isFinite(watts)) return DASH;
-  return `${watts.toFixed(1)} W`;
+  return withUnit(formatNumber(watts, 1, 1, locale), "W", locale);
 }
 
 /** Energy (input in kWh): "12.30 Wh" below 1000 Wh, then "1.20 kWh". */
-export function energy(kwh: number): string {
+export function energy(kwh: number, locale: string = intlLocale()): string {
   if (!Number.isFinite(kwh)) return DASH;
   const wh = kwh * 1000;
-  return Math.abs(wh) < 999.995 ? `${wh.toFixed(2)} Wh` : `${kwh.toFixed(2)} kWh`;
+  return Math.abs(wh) < 999.995
+    ? withUnit(formatNumber(wh, 2, 2, locale), "Wh", locale)
+    : withUnit(formatNumber(kwh, 2, 2, locale), "kWh", locale);
 }
 
 /** CO₂e (input in kg): "0.84 g" (3 significant digits), then "1.2 kg". */
-export function co2(kg: number): string {
+export function co2(kg: number, locale: string = intlLocale()): string {
   if (!Number.isFinite(kg)) return DASH;
   const g = kg * 1000;
-  return Math.abs(g) < 999.5 ? `${sig3(g)} g` : `${sig3(kg)} kg`;
+  return Math.abs(g) < 999.5
+    ? withUnit(sig3(g, locale), "g", locale)
+    : withUnit(sig3(kg, locale), "kg", locale);
 }
 
 /** Duration as hh:mm:ss (hours may exceed 24). */
@@ -45,33 +70,45 @@ export function duration(seconds: number): string {
 }
 
 /** Grid carbon intensity as an integer: "56 g/kWh". */
-export function intensity(gPerKwh: number): string {
+export function intensity(gPerKwh: number, locale: string = intlLocale()): string {
   if (!Number.isFinite(gPerKwh)) return DASH;
-  return `${gPerKwh.toFixed(0)} g/kWh`;
+  return withUnit(formatNumber(gPerKwh, 0, 0, locale), "g/kWh", locale);
 }
+
+/** A plain number with a fixed number of decimals ("31.1", "31,1"). */
+export function decimal(x: number, decimals: number, locale: string = intlLocale()): string {
+  if (!Number.isFinite(x)) return DASH;
+  return formatNumber(x, decimals, decimals, locale);
+}
+
+/** Tools named in "measured (…)"; not translated. */
+const MEASURED_BY: Record<string, string> = {
+  intel_rapl: "Intel RAPL",
+  windows_emi: "Windows EMI",
+  intel_power_gadget: "Intel Power Gadget",
+  apple_powermetrics: "powermetrics",
+};
 
 /** How CodeCarbon obtains the CPU power, in plain words. */
 export function cpuMethod(hw: Hardware): string {
-  const tdp = hw.cpu_tdp_w != null ? `TDP ${sig3(hw.cpu_tdp_w)} W` : null;
-  switch (hw.cpu_method) {
-    case "intel_rapl":
-      return "measured (Intel RAPL)";
-    case "windows_emi":
-      return "measured (Windows EMI)";
-    case "intel_power_gadget":
-      return "measured (Intel Power Gadget)";
-    case "apple_powermetrics":
-      return "measured (powermetrics)";
+  const tdp =
+    hw.cpu_tdp_w != null
+      ? t("method.tdp", { value: withUnit(sig3(hw.cpu_tdp_w), "W", intlLocale()) })
+      : null;
+  const method = hw.cpu_method;
+  const tool = method ? MEASURED_BY[method] : undefined;
+  if (tool) return t("method.measured", { tool });
+  switch (method) {
     case "cpu_load":
-      return tdp ? `estimated from load (${tdp})` : "estimated from load";
+      return tdp ? t("method.load_tdp", { tdp }) : t("method.load");
     case "constant":
-      return tdp ? `constant estimate (${tdp})` : "constant estimate";
+      return tdp ? t("method.constant_tdp", { tdp }) : t("method.constant");
     case null:
     case undefined:
     case "":
-      return "unknown";
+      return t("method.unknown");
     default:
-      return hw.cpu_method;
+      return method;
   }
 }
 
@@ -86,9 +123,9 @@ export function statusLine(
 ): string {
   const parts: string[] = [];
   if (hw) {
-    parts.push(`CPU: ${cpuMethod(hw)}`);
+    parts.push(t("status.cpu", { method: cpuMethod(hw) }));
     if (hw.gpu_method && (hw.gpu_count ?? 1) > 0) {
-      parts.push(`GPU: ${hw.gpu_method === "nvml" ? "NVML" : hw.gpu_method}`);
+      parts.push(t("status.gpu", { method: hw.gpu_method === "nvml" ? "NVML" : hw.gpu_method }));
     }
   }
   if (loc) {
@@ -114,12 +151,12 @@ export function parseLocal(iso: string): Date | null {
   return Number.isNaN(date.getTime()) || date.getMonth() !== mo - 1 ? null : date;
 }
 
-/** `locale` undefined = the system locale. */
+/** `locale`: a BCP 47 tag, by default the current language's (i18n.ts). */
 function dateFormat(
   locale: string | undefined,
   options: Intl.DateTimeFormatOptions,
 ): Intl.DateTimeFormat {
-  return new Intl.DateTimeFormat(locale, options);
+  return new Intl.DateTimeFormat(locale ?? intlLocale(), options);
 }
 
 /**
@@ -161,10 +198,10 @@ export function formatTick(date: string, locale?: string): string {
 /** A total duration in words: "45 s", "12 min", "3 h 5 min", "26 h". */
 export function durationShort(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return DASH;
-  if (seconds < 60) return `${Math.floor(seconds)} s`;
+  if (seconds < 60) return t("duration.seconds", { value: Math.floor(seconds) });
   const minutes = Math.round(seconds / 60);
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
-  if (h === 0) return `${m} min`;
-  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+  if (h === 0) return t("duration.minutes", { value: m });
+  return m === 0 ? t("duration.hours", { value: h }) : t("duration.hours_minutes", { h, m });
 }

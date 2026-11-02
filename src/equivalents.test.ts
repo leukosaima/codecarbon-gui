@@ -1,6 +1,7 @@
-import { describe as suite, expect, it } from "vitest";
+import { afterEach, describe as suite, expect, it } from "vitest";
 import type { Equivalent } from "./api";
 import { best, describe, ICONS } from "./equivalents";
+import { setLocale } from "./i18n/i18n";
 
 const eq = (key: string, value: number): Equivalent => ({ key, value, unit: "" });
 
@@ -27,6 +28,29 @@ suite("describe", () => {
     for (const key of ["car_km", "smartphone_charges", "led_tv_hours", "streaming_hours"]) {
       expect(ICONS[key]).toBeTruthy();
     }
+  });
+});
+
+suite("describe in French", () => {
+  afterEach(() => {
+    setLocale("en", []);
+  });
+
+  it("phrases each factor with French typography", () => {
+    setLocale("fr", ["fr-FR"]);
+    const nb = "\u00a0";
+    expect(describe(eq("car_km", 2))).toBe(`≈${nb}2${nb}km en voiture`);
+    expect(describe(eq("car_km", 12.345))).toBe(`≈${nb}12,3${nb}km en voiture`);
+    expect(describe(eq("car_km", 0.4))).toBe(`≈${nb}400${nb}m en voiture`);
+    expect(describe(eq("smartphone_charges", 350))).toBe(`≈${nb}350 charges de smartphone`);
+    // French singular up to 2 (exclusive): 1,5 charge.
+    expect(describe(eq("smartphone_charges", 1.5))).toBe(`≈${nb}1,5 charge de smartphone`);
+    expect(describe(eq("smartphone_charges", 0.14))).toBe(
+      `≈${nb}14${nb}% d'une charge de smartphone`,
+    );
+    expect(describe(eq("led_tv_hours", 2.5))).toBe(`≈${nb}2,5${nb}heures de télévision LED`);
+    expect(describe(eq("led_tv_hours", 0.2))).toBe(`≈${nb}12${nb}min de télévision LED`);
+    expect(describe(eq("streaming_hours", 0.005))).toBe(`≈${nb}18${nb}s de streaming vidéo`);
   });
 });
 

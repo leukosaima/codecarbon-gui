@@ -11,12 +11,16 @@
 //! * [`commands`]   – `#[tauri::command]` API for the panel
 //! * [`format`]     – number formatting for the tray
 //! * [`history`]    – past sessions from `emissions.csv`, totals, equivalents
+//! * [`i18n`]       – tray / menu strings in English and French
+//! * [`error`]      – errors sent to the panel as translatable codes
 
 pub mod agent;
 pub mod commands;
 pub mod controller;
+pub mod error;
 pub mod format;
 pub mod history;
+pub mod i18n;
 pub mod protocol;
 pub mod settings;
 pub mod state;
@@ -33,6 +37,34 @@ use crate::settings::Settings;
 /// Id of the "Quit CodeCarbon" item of the macOS app menu.
 #[cfg(target_os = "macos")]
 const APP_QUIT_ID: &str = "app-quit";
+
+/// The macOS app menu, in `lang` (rebuilt when the language changes).
+#[cfg(target_os = "macos")]
+pub fn app_menu(
+    app: &tauri::AppHandle,
+    lang: i18n::Lang,
+) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use i18n::{tr, Key};
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+    let quit = MenuItem::with_id(
+        app,
+        APP_QUIT_ID,
+        tr(lang, Key::QuitApp),
+        true,
+        Some("CmdOrCtrl+Q"),
+    )?;
+    let app_menu = Submenu::with_items(
+        app,
+        "CodeCarbon",
+        true,
+        &[
+            &PredefinedMenuItem::hide(app, Some(tr(lang, Key::HideApp)))?,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
+        ],
+    )?;
+    Menu::with_items(app, &[&app_menu])
+}
 
 /// Entry point (called by `main.rs`).
 pub fn run() {
@@ -58,25 +90,13 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     let builder = builder
         .menu(|app| {
-            use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-            let quit = MenuItem::with_id(
-                app,
-                APP_QUIT_ID,
-                "Quit CodeCarbon",
-                true,
-                Some("CmdOrCtrl+Q"),
-            )?;
-            let app_menu = Submenu::with_items(
-                app,
-                "CodeCarbon",
-                true,
-                &[
-                    &PredefinedMenuItem::hide(app, None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &quit,
-                ],
-            )?;
-            Menu::with_items(app, &[&app_menu])
+            // Built before `setup`: read the language setting here.
+            let lang = app
+                .path()
+                .app_config_dir()
+                .map(|dir| Settings::load(&settings::settings_path(&dir)).lang())
+                .unwrap_or_else(|_| i18n::Lang::system());
+            app_menu(app, lang)
         })
         .on_menu_event(|app, event| {
             if event.id().as_ref() == APP_QUIT_ID {
@@ -91,6 +111,7 @@ pub fn run() {
             commands::stop_tracking,
             commands::restart_agent,
             commands::get_settings,
+            commands::get_system_languages,
             commands::save_settings,
             commands::open_data_folder,
             commands::get_history,
@@ -171,6 +192,8 @@ fn setup(app: &mut App) -> anyhow::Result<()> {
     }
 
     let launch_at_login = settings.launch_at_login;
+    let lang = settings.lang();
+    log::info!("language: {lang:?} (setting {:?})", settings.language);
     let credentials = config_dir.join(agent::CREDENTIALS_FILE);
     if let Err(e) = std::fs::create_dir_all(&config_dir) {
         log::warn!("cannot create {}: {e}", config_dir.display());
@@ -184,7 +207,7 @@ fn setup(app: &mut App) -> anyhow::Result<()> {
 
     // A missing tray (e.g. a Linux desktop without StatusNotifier support)
     // must not prevent the app from running.
-    match tray::Tray::create(&handle) {
+    match tray::Tray::create(&handle, lang) {
         Ok(tray) => {
             *app.state::<AppCore>()
                 .tray

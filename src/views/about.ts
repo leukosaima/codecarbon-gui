@@ -2,12 +2,14 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { errorMessage, openUrl, quitApp, type TrackerState } from "../api";
 import { h, setText } from "../dom";
+import { live, type MessageKey } from "../i18n/i18n";
 import logoUrl from "../../src-tauri/icons/128x128@2x.png";
 
-const LINKS: [string, string][] = [
-  ["codecarbon.io", "https://codecarbon.io"],
-  ["CodeCarbon Desktop on GitHub", "https://github.com/mlco2/codecarbon-gui"],
-  ["CodeCarbon library on GitHub", "https://github.com/mlco2/codecarbon"],
+/** Label (a message key, or a literal name), URL. */
+const LINKS: [MessageKey | { name: string }, string][] = [
+  [{ name: "codecarbon.io" }, "https://codecarbon.io"],
+  ["about.link_desktop", "https://github.com/mlco2/codecarbon-gui"],
+  ["about.link_library", "https://github.com/mlco2/codecarbon"],
 ];
 
 export class AboutView {
@@ -21,14 +23,15 @@ export class AboutView {
 
   constructor() {
     const links = LINKS.map(([label, url]) => {
-      const a = h("a", { href: url, class: "link" }, label);
+      const text = typeof label === "string" ? live(label) : label.name;
+      const a = h("a", { href: url, class: "link" }, text);
       a.addEventListener("click", (e) => {
         e.preventDefault();
         openUrl(url).catch((err: unknown) => setText(this.message, errorMessage(err)));
       });
       return h("li", {}, a);
     });
-    const quit = h("button", { class: "btn", type: "button" }, "Quit CodeCarbon");
+    const quit = h("button", { class: "btn", type: "button" }, live("about.quit"));
     quit.addEventListener("click", () => void quitApp());
 
     this.root = h(
@@ -42,30 +45,25 @@ export class AboutView {
           "div",
           {},
           h("h1", {}, "CodeCarbon"),
-          h("p", { class: "muted" }, "Measure the power and CO₂ emissions of your computer."),
+          h("p", { class: "muted" }, live("about.tagline")),
         ),
       ),
       h(
         "dl",
         { class: "card summary-grid" },
-        h("dt", {}, "App"),
+        h("dt", {}, live("about.app")),
         this.appVersion,
-        h("dt", {}, "Agent"),
+        h("dt", {}, live("about.agent")),
         this.agentVersion,
         h("dt", {}, "CodeCarbon"),
         this.codecarbonVersion,
         h("dt", {}, "Python"),
         this.pythonVersion,
-        h("dt", {}, "Platform"),
+        h("dt", {}, live("about.platform")),
         this.platform,
       ),
       h("ul", { class: "links" }, ...links),
-      h(
-        "p",
-        { class: "muted small" },
-        "Released under the MIT licence. Numbers are computed by the CodeCarbon library; " +
-          "they are estimates, not lab measurements.",
-      ),
+      h("p", { class: "muted small" }, live("about.licence")),
       this.message,
       h("div", { class: "form-actions" }, quit),
     );

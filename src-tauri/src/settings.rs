@@ -8,10 +8,15 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::AppError;
+use crate::i18n::Lang;
 use crate::protocol::AgentConfig;
 
 /// File name inside the app config directory.
 pub const SETTINGS_FILE: &str = "settings.json";
+
+/// Values of [`Settings::language`]: follow the system, or force one.
+pub const LANGUAGES: [&str; 3] = ["system", "en", "fr"];
 
 /// Default CodeCarbon API endpoint.
 pub const DEFAULT_API_ENDPOINT: &str = "https://api.codecarbon.io";
@@ -75,6 +80,8 @@ pub struct Settings {
     pub pue: Option<f64>,
     /// Override of the grid carbon intensity, in g CO₂e / kWh.
     pub force_carbon_intensity_g_per_kwh: Option<f64>,
+    /// Language of the panel and the tray: `"system"`, `"en"` or `"fr"`.
+    pub language: String,
 }
 
 impl Default for Settings {
@@ -89,6 +96,7 @@ impl Default for Settings {
             api: ApiSettings::default(),
             pue: None,
             force_carbon_intensity_g_per_kwh: None,
+            language: "system".to_string(),
         }
     }
 }
@@ -127,35 +135,40 @@ impl Settings {
         Ok(())
     }
 
-    /// Check the values a user can type. Returns a message for the UI.
-    pub fn validate(&self) -> Result<(), String> {
+    /// Check the values a user can type.
+    pub fn validate(&self) -> Result<(), AppError> {
         if !(1.0..=60.0).contains(&self.interval_secs) {
-            return Err("The measurement interval must be between 1 and 60 seconds.".into());
+            return Err(AppError::InvalidInterval);
         }
         if let Some(code) = non_empty(&self.country_iso_code) {
             if code.len() != 3 || !code.chars().all(|c| c.is_ascii_alphabetic()) {
-                return Err("The country code must have 3 letters (e.g. FRA, USA, DEU).".into());
+                return Err(AppError::InvalidCountry);
             }
         }
         if let Some(pue) = self.pue {
             if !(1.0..=5.0).contains(&pue) {
-                return Err("PUE must be between 1.0 and 5.0.".into());
+                return Err(AppError::InvalidPue);
             }
         }
         if let Some(ci) = self.force_carbon_intensity_g_per_kwh {
             if !(0.0..=2000.0).contains(&ci) {
-                return Err("Carbon intensity must be between 0 and 2000 g/kWh.".into());
+                return Err(AppError::InvalidCarbonIntensity);
             }
         }
         if self.api.enabled {
             if !self.api.endpoint.starts_with("https://") {
-                return Err("The API endpoint must start with https://".into());
+                return Err(AppError::InvalidApiEndpoint);
             }
             if self.api.api_key.trim().is_empty() || self.api.experiment_id.trim().is_empty() {
-                return Err("API upload needs an API key and an experiment id.".into());
+                return Err(AppError::ApiCredentialsMissing);
             }
         }
         Ok(())
+    }
+
+    /// The language to show (the system's for `"system"`).
+    pub fn lang(&self) -> Lang {
+        Lang::from_setting(&self.language)
     }
 
     /// Normalise user input (trim, upper-case country, empty → `None`).
@@ -168,6 +181,13 @@ impl Settings {
         self.api.organization_name = self.api.organization_name.trim().to_string();
         self.api.project_name = self.api.project_name.trim().to_string();
         self.api.experiment_name = self.api.experiment_name.trim().to_string();
+        // An unknown language (hand-edited file, newer version) → system.
+        let language = self.language.trim().to_ascii_lowercase();
+        self.language = if LANGUAGES.contains(&language.as_str()) {
+            language
+        } else {
+            "system".to_string()
+        };
         self
     }
 
@@ -224,7 +244,36 @@ mod tests {
         assert!(!s.launch_at_login);
         assert!(!s.api.enabled);
         assert_eq!(s.api.endpoint, "https://api.codecarbon.io");
+        assert_eq!(s.language, "system");
         assert!(s.validate().is_ok());
+    }
+
+    #[test]
+    fn language() {
+        let old: Settings = serde_json::from_str(r#"{"interval_secs": 5}"#).unwrap();
+        assert_eq!(old.language, "system", "older files have no language");
+        for (given, kept) in [
+            ("fr", "fr"),
+            (" EN ", "en"),
+            ("system", "system"),
+            ("de", "system"),
+            ("", "system"),
+        ] {
+            let s = Settings {
+                language: given.into(),
+                ..Default::default()
+            }
+            .normalized();
+            assert_eq!(s.language, kept, "{given:?}");
+        }
+        let fr = Settings {
+            language: "fr".into(),
+            ..Default::default()
+        };
+        assert_eq!(fr.lang(), Lang::Fr);
+        assert_eq!(Settings::default().lang(), Lang::system());
+        let v = serde_json::to_value(&fr).unwrap();
+        assert_eq!(v["language"], "fr");
     }
 
     #[test]
@@ -330,12 +379,12 @@ mod tests {
             interval_secs: 0.5,
             ..Default::default()
         };
-        assert!(bad_interval.validate().is_err());
+        assert_eq!(bad_interval.validate(), Err(AppError::InvalidInterval));
         let bad_country = Settings {
             country_iso_code: Some("FR".into()),
             ..Default::default()
         };
-        assert!(bad_country.validate().is_err());
+        assert_eq!(bad_country.validate(), Err(AppError::InvalidCountry));
         let empty_country = Settings {
             country_iso_code: Some("  ".into()),
             ..Default::default()
@@ -348,7 +397,10 @@ mod tests {
             },
             ..Default::default()
         };
-        assert!(api_without_key.validate().is_err());
+        assert_eq!(
+            api_without_key.validate(),
+            Err(AppError::ApiCredentialsMissing)
+        );
     }
 
     #[test]

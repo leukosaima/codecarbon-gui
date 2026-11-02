@@ -32,13 +32,20 @@ import {
   type SelectOption,
 } from "../account";
 import { h, setText, show, spinner } from "../dom";
+import { live, liveAttr, t, tNodes, type MessageKey } from "../i18n/i18n";
 
 const DASHBOARD_URL = "https://dashboard.codecarbon.io";
 
-const KIND_LABEL: Record<ApiKind, string> = {
-  organization: "organisation",
-  project: "project",
-  experiment: "experiment",
+/** Separate sentences per kind: French nouns have a gender. */
+const NEW_NAME: Record<ApiKind, MessageKey> = {
+  organization: "account.new_name.organization",
+  project: "account.new_name.project",
+  experiment: "account.new_name.experiment",
+};
+const NAME_REQUIRED: Record<ApiKind, MessageKey> = {
+  organization: "account.name_required.organization",
+  project: "account.name_required.project",
+  experiment: "account.name_required.experiment",
 };
 
 interface Level {
@@ -50,7 +57,9 @@ interface Level {
   createButton: HTMLButtonElement;
 }
 
-function link(text: string, onClick: () => void): HTMLButtonElement {
+/** A link-styled button; `label` is a message key or a literal name. */
+function link(label: MessageKey | { name: string }, onClick: () => void): HTMLButtonElement {
+  const text = typeof label === "string" ? live(label) : label.name;
   const button = h("button", { class: "link", type: "button" }, text);
   button.addEventListener("click", onClick);
   return button;
@@ -72,7 +81,8 @@ export class AccountCard {
   /** `api_create` sent for this kind; the created item gets selected. */
   private pendingCreate: ApiKind | null = null;
   private seenCreated: string | null = null;
-  private localError = "";
+  /** An error of the last action (re-rendered in the current language). */
+  private localError: (() => string) | null = null;
   private toggling = false;
 
   private readonly checking = h("p", { class: "hint account-hint" });
@@ -81,6 +91,7 @@ export class AccountCard {
   private readonly signedIn: HTMLElement;
   private readonly reopen: HTMLButtonElement;
   private readonly userName = h("b");
+  private readonly signedInAs = h("span");
   private readonly levels: Record<ApiKind, Level>;
   private readonly refresh: HTMLButtonElement;
   private readonly catalogStatus = h("span", { class: "muted small account-status" });
@@ -91,63 +102,55 @@ export class AccountCard {
     role: "switch",
   });
   private readonly target = h("p", { class: "muted small account-target" });
-  private readonly busyHint = h(
-    "p",
-    { class: "muted small" },
-    "A measurement is running: changes apply to the next measurement.",
-  );
+  private readonly busyHint = h("p", { class: "muted small" }, live("account.busy_hint"));
   private readonly error = h("p", { class: "field-error account-error", role: "alert" });
 
   constructor(private readonly saveUploadEnabled: (enabled: boolean) => Promise<void>) {
     const signIn = h(
       "button",
       { class: "btn btn-primary account-cta", type: "button" },
-      "Sign in or create an account",
+      live("account.sign_in"),
     );
     signIn.addEventListener("click", () => void this.run(accountSignIn));
     this.signedOut = h(
       "div",
       { class: "account-block" },
-      h(
-        "p",
-        {},
-        "Upload your sessions to the free CodeCarbon dashboard to see them over time and share them.",
-      ),
+      h("p", {}, live("account.pitch")),
       signIn,
       h(
         "p",
         { class: "small account-site" },
-        link("dashboard.codecarbon.io", () => void this.run(() => openUrl(DASHBOARD_URL))),
+        link({ name: "dashboard.codecarbon.io" }, () => void this.run(() => openUrl(DASHBOARD_URL))),
       ),
     );
 
-    this.reopen = link("Open the login page again", () => {
+    this.reopen = link("account.reopen", () => {
       const url = this.state?.account.auth_url;
       if (url) void this.run(() => openUrl(url));
     });
-    const cancel = h("button", { class: "btn btn-small", type: "button" }, "Cancel");
+    const cancel = h("button", { class: "btn btn-small", type: "button" }, live("common.cancel"));
     cancel.addEventListener("click", () => void this.run(accountCancelSignIn));
     this.signingIn = h(
       "div",
       { class: "account-block" },
-      h("p", { class: "hint account-hint" }, spinner(), "Finish signing in in your browser…"),
+      h("p", { class: "hint account-hint" }, spinner(), live("account.finish_in_browser")),
       h("div", { class: "account-actions" }, this.reopen, cancel),
     );
 
     this.levels = {
-      organization: this.level("organization", "Organisation"),
-      project: this.level("project", "Project"),
-      experiment: this.level("experiment", "Experiment"),
+      organization: this.level("organization", "account.organization"),
+      project: this.level("project", "account.project"),
+      experiment: this.level("experiment", "account.experiment"),
     };
-    this.refresh = link("Refresh", () => void this.run(accountRefreshCatalog));
+    this.refresh = link("account.refresh", () => void this.run(accountRefreshCatalog));
     this.signedIn = h(
       "div",
       { class: "account-block" },
       h(
         "p",
         { class: "account-user" },
-        h("span", {}, "Signed in as ", this.userName),
-        link("Sign out", () => void this.run(accountSignOut)),
+        this.signedInAs,
+        link("account.sign_out", () => void this.run(accountSignOut)),
       ),
       ...Object.values(this.levels).flatMap((l) => [l.row, l.createRow]),
       h("div", { class: "account-actions" }, this.catalogStatus, this.refresh),
@@ -160,7 +163,7 @@ export class AccountCard {
       h(
         "div",
         { class: "field field-toggle" },
-        h("label", { for: "f-api-enabled" }, h("span", {}, "Upload my sessions to the dashboard")),
+        h("label", { for: "f-api-enabled" }, h("span", {}, live("account.upload"))),
         this.uploadToggle,
       ),
       this.target,
@@ -171,7 +174,7 @@ export class AccountCard {
     this.root = h(
       "section",
       { class: "card account", "aria-labelledby": "account-title" },
-      h("h2", { class: "card-title", id: "account-title" }, "CodeCarbon dashboard"),
+      h("h2", { class: "card-title", id: "account-title" }, live("account.title")),
       this.checking,
       this.signedOut,
       this.signingIn,
@@ -181,7 +184,7 @@ export class AccountCard {
       h(
         "details",
         { class: "details account-advanced" },
-        h("summary", {}, "Advanced"),
+        h("summary", {}, live("common.advanced")),
         this.advanced,
       ),
     );
@@ -189,24 +192,24 @@ export class AccountCard {
   }
 
   /** A labelled select + its hidden "Create new…" row. */
-  private level(kind: ApiKind, label: string): Level {
+  private level(kind: ApiKind, label: MessageKey): Level {
     const id = `f-account-${kind}`;
     const select = h("select", { id });
-    const row = h("div", { class: "field" }, h("label", { for: id }, label), select);
-    const createInput = h("input", {
-      type: "text",
-      placeholder: `New ${KIND_LABEL[kind]} name`,
-      "aria-label": `New ${KIND_LABEL[kind]} name`,
-      maxlength: 100,
-      spellcheck: false,
-    });
-    const createButton = h("button", { class: "btn btn-small btn-primary", type: "button" }, "Create");
+    const row = h("div", { class: "field" }, h("label", { for: id }, live(label)), select);
+    const createInput = h("input", { type: "text", maxlength: 100, spellcheck: false });
+    liveAttr(createInput, "placeholder", NEW_NAME[kind]);
+    liveAttr(createInput, "aria-label", NEW_NAME[kind]);
+    const createButton = h(
+      "button",
+      { class: "btn btn-small btn-primary", type: "button" },
+      live("account.create"),
+    );
     const createRow = h(
       "div",
       { class: "account-create" },
       createInput,
       createButton,
-      link("Cancel", () => this.closeCreate()),
+      link("common.cancel", () => this.closeCreate()),
     );
     createRow.hidden = true;
     select.addEventListener("change", () => this.onSelect(kind, select.value));
@@ -240,18 +243,24 @@ export class AccountCard {
     this.render();
   }
 
+  /** The language changed: rebuild the selects' options, render again. */
+  relocalize(): void {
+    this.renderedSelects = "";
+    this.render();
+  }
+
   private async run(action: () => Promise<void>): Promise<void> {
-    this.localError = "";
+    this.localError = null;
     try {
       await action();
     } catch (e) {
-      this.localError = errorMessage(e);
+      this.localError = () => errorMessage(e);
     }
     this.render();
   }
 
   private onSelect(kind: ApiKind, value: string): void {
-    this.localError = "";
+    this.localError = null;
     if (value === CREATE_NEW) {
       this.createKind = kind;
       const level = this.levels[kind];
@@ -288,7 +297,7 @@ export class AccountCard {
   private async create(kind: ApiKind): Promise<void> {
     const name = this.levels[kind].createInput.value.trim();
     if (!name) {
-      this.localError = `Please enter a name for the new ${KIND_LABEL[kind]}.`;
+      this.localError = () => t(NAME_REQUIRED[kind]);
       this.render();
       return;
     }
@@ -300,7 +309,7 @@ export class AccountCard {
           : null;
     this.pendingCreate = kind;
     await this.run(() => accountCreate(kind, name, parent));
-    if (this.localError) this.pendingCreate = null;
+    if (this.localError !== null) this.pendingCreate = null;
   }
 
   /** The item we asked for was created: choose it. */
@@ -335,14 +344,11 @@ export class AccountCard {
     if (phase === "unknown") {
       this.checking.replaceChildren();
       if (ready && ready.protocol_version < 2) {
-        this.checking.append(
-          "Signing in to the dashboard needs a newer measurement engine. " +
-            "You can still enter an API key under Advanced.",
-        );
+        this.checking.append(t("account.engine_too_old"));
       } else {
         this.checking.append(
           spinner(),
-          ready ? "Checking your dashboard account…" : "Starting the measurement engine…",
+          t(ready ? "account.checking" : "common.starting_engine"),
         );
       }
     }
@@ -352,6 +358,9 @@ export class AccountCard {
     show(this.signedIn, phase === "signed_in");
     if (account && phase === "signed_in") {
       setText(this.userName, userLabel(account.user));
+      this.signedInAs.replaceChildren(
+        ...tNodes("account.signed_in_as", { user: this.userName }),
+      );
       this.renderSelects();
     }
 
@@ -363,11 +372,12 @@ export class AccountCard {
     this.target.replaceChildren();
     if (api && target) {
       this.target.append(
-        api.enabled ? "Uploads go to " : "Uploads are off. Selected: ",
-        h("b", {}, uploadTarget(api)),
+        ...tNodes(api.enabled ? "account.uploads_to" : "account.uploads_off", {
+          target: h("b", {}, uploadTarget(api)),
+        }),
       );
     } else {
-      this.target.append("Choose an experiment to upload to.");
+      this.target.append(t("account.choose_target"));
     }
     const phaseNow = this.state?.phase;
     show(
@@ -375,7 +385,8 @@ export class AccountCard {
       phaseNow === "running" || phaseNow === "starting" || phaseNow === "stopping",
     );
 
-    const error = this.localError || account?.last_error || "";
+    const error =
+      this.localError?.() ?? (account?.last_error ? errorMessage(account.last_error) : "");
     setText(this.error, error);
     show(this.error, error !== "");
   }
@@ -420,9 +431,11 @@ export class AccountCard {
     }
 
     this.catalogStatus.replaceChildren();
-    if (saving) this.catalogStatus.append(spinner(), " Saving…");
-    else if (account.creating) this.catalogStatus.append(spinner(), " Creating…");
-    else if (account.catalog_loading) this.catalogStatus.append(spinner(), " Loading…");
+    if (saving) this.catalogStatus.append(spinner(), ` ${t("account.saving")}`);
+    else if (account.creating) this.catalogStatus.append(spinner(), ` ${t("account.creating")}`);
+    else if (account.catalog_loading) {
+      this.catalogStatus.append(spinner(), ` ${t("account.loading")}`);
+    }
     this.refresh.disabled = account.catalog_loading || busy;
   }
 }

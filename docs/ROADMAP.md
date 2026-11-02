@@ -21,7 +21,8 @@
 ## v0.3 — "keep it fresh"
 - Auto-update (Tauri updater, signed) and code-signing / notarisation for
   macOS and Windows so SmartScreen/Gatekeeper stop warning.
-- Localisation (fr, en first).
+- [x] **Localisation**: English and French, panel and tray, following the
+  system language or the Settings → Language choice (see DESIGN.md §3.5).
 - Per-process view (CodeCarbon `tracking_mode="process"` on a chosen PID).
 - Optional elevated helper for RAPL on Linux and `powermetrics` on macOS to
   replace the TDP estimate with real measurements.

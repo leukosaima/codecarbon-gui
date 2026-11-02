@@ -2,17 +2,18 @@
 //!
 //! All commands are `async` so they run on the async runtime and not on the
 //! main thread (see the threading rule in `controller.rs`). Errors are
-//! returned as plain strings, ready to be shown in the UI.
+//! [`AppError`]s: a stable code the panel translates, plus the English text.
 
 use tauri::{AppHandle, Manager};
 
 use crate::controller::{self, AppCore};
+use crate::error::AppError;
 use crate::history::{self, Equivalent, Session};
 use crate::protocol::ApiKind;
 use crate::settings::Settings;
 use crate::state::TrackerState;
 
-type CmdResult<T> = Result<T, String>;
+type CmdResult<T> = Result<T, AppError>;
 
 /// The full state (the panel also receives it through `tracker://state`).
 #[tauri::command]
@@ -37,6 +38,13 @@ pub async fn restart_agent(app: AppHandle) -> CmdResult<()> {
     Ok(())
 }
 
+/// The OS's preferred languages (BCP 47, most preferred first), for the
+/// panel's "System default" language.
+#[tauri::command]
+pub async fn get_system_languages() -> CmdResult<Vec<String>> {
+    Ok(crate::i18n::system_locales())
+}
+
 #[tauri::command]
 pub async fn get_settings(app: AppHandle) -> CmdResult<Settings> {
     Ok(app.state::<AppCore>().settings())
@@ -47,8 +55,7 @@ pub async fn get_settings(app: AppHandle) -> CmdResult<Settings> {
 #[tauri::command]
 pub async fn save_settings(app: AppHandle, settings: Settings) -> CmdResult<Settings> {
     let settings = controller::save_settings(&app, settings)?;
-    apply_launch_at_login(&app, settings.launch_at_login)
-        .map_err(|e| format!("Settings saved, but launch at login could not be changed: {e}"))?;
+    apply_launch_at_login(&app, settings.launch_at_login).map_err(AppError::LaunchAtLoginFailed)?;
     Ok(settings)
 }
 
@@ -88,7 +95,8 @@ pub struct HistoryPayload {
 #[tauri::command]
 pub async fn get_history(app: AppHandle) -> CmdResult<HistoryPayload> {
     let path = app.state::<AppCore>().data_dir.join(history::CSV_FILE);
-    let mut h = history::load(&path).map_err(|e| format!("Cannot read {}: {e}", path.display()))?;
+    let mut h = history::load(&path)
+        .map_err(|e| AppError::HistoryReadFailed(format!("{}: {e}", path.display())))?;
     let summary = history::summarise(&h.sessions, chrono::Local::now().naive_local());
     h.sessions.truncate(MAX_HISTORY_SESSIONS);
     let equivalents = |t: &history::Totals| history::equivalents(t.emissions_kg, t.energy_kwh);

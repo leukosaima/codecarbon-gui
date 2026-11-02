@@ -14,6 +14,8 @@ use tauri::{async_runtime, AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::agent::{AgentHandle, AgentSignal};
+use crate::error::AppError;
+use crate::i18n::Lang;
 use crate::protocol::{AgentCommand, AgentEvent, ApiKind};
 use crate::settings::{ApiSettings, Settings, DEFAULT_API_ENDPOINT};
 use crate::state::{create_command, AccountPhase, Effect, Phase, Selection, TrackerState};
@@ -113,9 +115,10 @@ pub fn publish(app: &AppHandle) {
     if let Err(e) = app.emit(STATE_EVENT, &snapshot) {
         log::warn!("cannot emit {STATE_EVENT}: {e}");
     }
+    let lang = core.settings().lang();
     let mut tray = lock(&core.tray);
     if let Some(tray) = tray.as_mut() {
-        tray.refresh(&snapshot);
+        tray.refresh(&snapshot, lang);
     }
 }
 
@@ -183,16 +186,15 @@ fn run_effects(app: &AppHandle, effects: Vec<Effect>) {
                     log::warn!("cannot send {cmd:?}: {e}");
                     let mut tracker = core.tracker();
                     tracker.account.catalog_loading = false;
-                    tracker.account.last_error = Some(e.to_string());
+                    tracker.account.last_error = Some(e.into());
                 }
             }
             Effect::OpenUrl(url) => {
                 if let Err(e) = open_https(app, &url) {
                     // The card still shows "Open the login page again".
                     log::warn!("cannot open the login page: {e}");
-                    core.tracker().account.last_error = Some(format!(
-                        "Cannot open your browser ({e}). Use the link below."
-                    ));
+                    let detail = e.detail().map_or_else(|| e.to_string(), str::to_string);
+                    core.tracker().account.last_error = Some(AppError::BrowserFailed(detail));
                 }
             }
             Effect::SaveSelection {
@@ -210,20 +212,43 @@ fn run_effects(app: &AppHandle, effects: Vec<Effect>) {
 }
 
 /// Validate, persist and apply new settings, then tell the panel.
-/// Measurement settings apply to the next start.
-pub fn save_settings(app: &AppHandle, settings: Settings) -> Result<Settings, String> {
+/// Measurement settings apply to the next start; the language at once
+/// (tray, macOS app menu).
+pub fn save_settings(app: &AppHandle, settings: Settings) -> Result<Settings, AppError> {
     let settings = settings.normalized();
     settings.validate()?;
     let core = app.state::<AppCore>();
     settings
         .save(&core.settings_path)
-        .map_err(|e| format!("Cannot save the settings: {e}"))?;
+        .map_err(|e| AppError::SettingsSaveFailed(e.to_string()))?;
+    let old_lang = core.settings().lang();
     core.set_settings(settings.clone());
     log::info!("settings saved to {}", core.settings_path.display());
     if let Err(e) = app.emit(SETTINGS_EVENT, &settings) {
         log::warn!("cannot emit {SETTINGS_EVENT}: {e}");
     }
+    let lang = settings.lang();
+    if lang != old_lang {
+        log::info!("language: {lang:?}");
+        apply_language(app, lang);
+    }
     Ok(settings)
+}
+
+/// Relabel the tray (through `publish`) and the macOS app menu.
+fn apply_language(app: &AppHandle, lang: Lang) {
+    #[cfg(target_os = "macos")]
+    match crate::app_menu(app, lang) {
+        Ok(menu) => {
+            if let Err(e) = app.set_menu(menu) {
+                log::warn!("cannot update the app menu: {e}");
+            }
+        }
+        Err(e) => log::warn!("cannot build the app menu: {e}"),
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = lang;
+    publish(app);
 }
 
 /// Upload to the experiment the user picked, with its project's API key.
@@ -232,7 +257,7 @@ fn save_selection(
     selection: Selection,
     api_key: String,
     endpoint: Option<String>,
-) -> Result<Settings, String> {
+) -> Result<Settings, AppError> {
     let mut settings = app.state::<AppCore>().settings();
     settings.api = ApiSettings {
         enabled: true,
@@ -254,13 +279,13 @@ fn save_selection(
 }
 
 /// Open a web page in the default browser (https only).
-pub fn open_https(app: &AppHandle, url: &str) -> Result<(), String> {
+pub fn open_https(app: &AppHandle, url: &str) -> Result<(), AppError> {
     if !url.starts_with("https://") {
-        return Err("Only https:// links can be opened.".into());
+        return Err(AppError::HttpsOnly);
     }
     app.opener()
         .open_url(url, None::<&str>)
-        .map_err(|e| e.to_string())
+        .map_err(|e| AppError::OpenLinkFailed(e.to_string()))
 }
 
 // ---------------------------------------------------------------------------
@@ -268,15 +293,13 @@ pub fn open_https(app: &AppHandle, url: &str) -> Result<(), String> {
 // ---------------------------------------------------------------------------
 
 /// Fails unless the agent is up and speaks protocol v2.
-fn ensure_account_available(core: &AppCore) -> Result<(), String> {
+fn ensure_account_available(core: &AppCore) -> Result<(), AppError> {
     let tracker = core.tracker();
     if tracker.agent_ready.is_none() {
-        return Err("The measurement engine is not ready yet.".into());
+        return Err(AppError::EngineNotReady);
     }
     if !tracker.account_available() {
-        return Err(
-            "This version of the measurement engine cannot sign in to the dashboard.".into(),
-        );
+        return Err(AppError::EngineTooOld);
     }
     Ok(())
 }
@@ -287,7 +310,7 @@ fn send_account_command(
     app: &AppHandle,
     cmd: AgentCommand,
     update: impl FnOnce(&mut TrackerState),
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let core = app.state::<AppCore>();
     ensure_account_available(&core)?;
     let before = core.tracker().account.clone();
@@ -295,7 +318,7 @@ fn send_account_command(
     update(&mut core.tracker());
     if let Err(e) = core.agent.send(&cmd) {
         core.tracker().account = before;
-        return Err(e.to_string());
+        return Err(e.into());
     }
     publish(app);
     Ok(())
@@ -303,7 +326,7 @@ fn send_account_command(
 
 /// "Sign in or create an account": start the browser login. While one is
 /// pending, opens its login page again instead of starting another.
-pub fn account_sign_in(app: &AppHandle) -> Result<(), String> {
+pub fn account_sign_in(app: &AppHandle) -> Result<(), AppError> {
     let core = app.state::<AppCore>();
     let pending = {
         let tracker = core.tracker();
@@ -321,7 +344,7 @@ pub fn account_sign_in(app: &AppHandle) -> Result<(), String> {
 }
 
 /// Abandon a pending browser login.
-pub fn account_cancel_sign_in(app: &AppHandle) -> Result<(), String> {
+pub fn account_cancel_sign_in(app: &AppHandle) -> Result<(), AppError> {
     let core = app.state::<AppCore>();
     if core.tracker().account.phase != AccountPhase::SigningIn {
         return Ok(());
@@ -335,16 +358,16 @@ pub fn account_cancel_sign_in(app: &AppHandle) -> Result<(), String> {
         tracker.account.signed_out();
     }
     publish(app);
-    sent.map_err(|e| e.to_string())
+    sent.map_err(AppError::from)
 }
 
 /// Forget the login, and the API key / experiment it gave us.
-pub fn account_sign_out(app: &AppHandle) -> Result<(), String> {
+pub fn account_sign_out(app: &AppHandle) -> Result<(), AppError> {
     let core = app.state::<AppCore>();
     let sent = if core.tracker().account_available() {
         core.agent
             .send(&AgentCommand::AuthLogout)
-            .map_err(|e| e.to_string())
+            .map_err(AppError::from)
     } else {
         Ok(())
     };
@@ -361,7 +384,7 @@ pub fn account_sign_out(app: &AppHandle) -> Result<(), String> {
 }
 
 /// Fetch the organisations / projects / experiments again.
-pub fn account_refresh_catalog(app: &AppHandle) -> Result<(), String> {
+pub fn account_refresh_catalog(app: &AppHandle) -> Result<(), AppError> {
     send_account_command(app, AgentCommand::ApiCatalog, |t| {
         t.account.catalog_loading = true;
         t.account.last_error = None;
@@ -376,7 +399,7 @@ pub fn account_create(
     name: String,
     description: Option<String>,
     parent_id: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let cmd = create_command(kind, &name, description.as_deref(), parent_id.as_deref())?;
     send_account_command(app, cmd, |t| {
         t.account.creating = true;
@@ -391,7 +414,7 @@ pub fn account_select_experiment(
     organization_id: String,
     project_id: String,
     experiment_id: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let core = app.state::<AppCore>();
     let current = core.settings().api;
     let (selection, reuse_key) = core.tracker().account.plan_selection(
@@ -413,7 +436,7 @@ pub fn account_select_experiment(
 }
 
 /// Start measuring with the current settings.
-pub fn start(app: &AppHandle) -> Result<(), String> {
+pub fn start(app: &AppHandle) -> Result<(), AppError> {
     let core = app.state::<AppCore>();
     {
         let tracker = core.tracker();
@@ -421,32 +444,28 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
             return Ok(()); // already measuring: nothing to do
         }
         if !tracker.can_start() {
-            return Err("The measurement engine is not ready yet.".into());
+            return Err(AppError::EngineNotReady);
         }
     }
     if let Err(e) = std::fs::create_dir_all(&core.data_dir) {
         log::warn!("cannot create {}: {e}", core.data_dir.display());
     }
     let config = core.settings().to_agent_config(&core.data_dir);
-    core.agent
-        .send(&AgentCommand::Start {
-            config: Box::new(config),
-        })
-        .map_err(|e| e.to_string())?;
+    core.agent.send(&AgentCommand::Start {
+        config: Box::new(config),
+    })?;
     core.tracker().begin_start();
     publish(app);
     Ok(())
 }
 
 /// Stop measuring (no-op when idle).
-pub fn stop(app: &AppHandle) -> Result<(), String> {
+pub fn stop(app: &AppHandle) -> Result<(), AppError> {
     let core = app.state::<AppCore>();
     if !matches!(core.tracker().phase, Phase::Starting | Phase::Running) {
         return Ok(());
     }
-    core.agent
-        .send(&AgentCommand::Stop)
-        .map_err(|e| e.to_string())?;
+    core.agent.send(&AgentCommand::Stop)?;
     core.tracker().begin_stop();
     publish(app);
     Ok(())
@@ -516,12 +535,14 @@ pub fn toggle_panel_at_tray(app: &AppHandle) {
 }
 
 /// Open the folder holding `emissions.csv` in the file manager.
-pub fn open_data_folder(app: &AppHandle) -> Result<(), String> {
+pub fn open_data_folder(app: &AppHandle) -> Result<(), AppError> {
     let dir = &app.state::<AppCore>().data_dir;
-    std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    let failed =
+        |e: &dyn std::fmt::Display| AppError::OpenFolderFailed(format!("{}: {e}", dir.display()));
+    std::fs::create_dir_all(dir).map_err(|e| failed(&e))?;
     app.opener()
         .open_path(dir.to_string_lossy(), None::<&str>)
-        .map_err(|e| format!("cannot open {}: {e}", dir.display()))
+        .map_err(|e| failed(&e))
 }
 
 /// Graceful quit: stop the measurement (≤ 3 s), ask the agent to quit

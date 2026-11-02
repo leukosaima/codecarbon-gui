@@ -20,6 +20,7 @@ const defaults = (): Settings => ({
   },
   pue: null,
   force_carbon_intensity_g_per_kwh: null,
+  language: "system",
 });
 
 describe("settings validation", () => {

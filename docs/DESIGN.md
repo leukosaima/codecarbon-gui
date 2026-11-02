@@ -93,7 +93,8 @@ contributors can follow the Rust and TS parts.
 * Icon: the CodeCarbon molecule mark (from the official logo). Dimmed grey
   when idle, brand lime when measuring; a template icon on macOS (alpha
   only, so idle is 45 % opacity). The app icon is the project's favicon.
-* Tooltip: `CodeCarbon — not measuring` / `CodeCarbon — 23.4 W · 0.84 g CO₂e`.
+* Tooltip: `CodeCarbon — not measuring` / `CodeCarbon — 23.4 W · 0.84 g CO₂e`
+  (French: `CodeCarbon — aucune mesure en cours` / `… 23,4 W · 0,84 g CO₂e`, §3.5).
 * macOS only: the menu-bar title shows the live power, e.g. `23 W`.
 * Menu:
   * **Start measuring** / **Stop measuring**
@@ -138,13 +139,14 @@ tray icon when opened from it. Four views, switched by a top tab bar
     them with the app's number formatting. They are orders of magnitude.
 * **Settings** — measurement interval, country override (3-letter ISO) or
   "detect from IP", keep CSV history, start measuring on launch, launch at
-  login, and an **API** section (endpoint, API key, experiment id, "upload to
+  login, language (System default / English / Français), and an **API** section (endpoint, API key, experiment id, "upload to
   CodeCarbon API") that is plumbed through to the tracker but marked
   *experimental* until the login flow (roadmap) exists.
 * **About** — versions (app, agent, CodeCarbon), links, licence.
 
 Light and dark themes follow the OS. No framework: `src/main.ts` + small
-modules (`api.ts`, `format.ts`, `equivalents.ts`, `barchart.ts`, `views/*.ts`).
+modules (`api.ts`, `format.ts`, `equivalents.ts`, `barchart.ts`, `i18n/`,
+`views/*.ts`).
 
 ### 3.4 Data & privacy
 
@@ -154,6 +156,38 @@ modules (`api.ts`, `format.ts`, `equivalents.ts`, `barchart.ts`, `views/*.ts`).
   view); it never leaves the computer.
 * Network: none unless the user leaves country on "detect from IP" (CodeCarbon
   calls its geolocation endpoint once per start) or enables API upload.
+
+### 3.5 Localisation
+
+English (default and fallback) and French. `settings.language` is
+`"system"` (default), `"en"` or `"fr"`; "system" takes the first of the
+OS's preferred languages that we have (`fr*` → French), else English.
+
+* **Panel**: `src/i18n/en.ts` and `fr.ts` are flat message tables (`fr`
+  is typed from `en`, so a missing key does not compile; a Vitest test
+  also compares keys and placeholders). `t(key, {name})` interpolates,
+  `n(key, count)` picks `key_one` / `key_other` with `Intl.PluralRules`
+  (French: 0 and 1 are singular). Numbers go through `Intl.NumberFormat`
+  (no grouping, rounded like the tray), dates through `Intl.DateTimeFormat`,
+  both with the chosen language (the user's regional variant when it
+  matches: `en-GB`, `fr-CA`). French units are joined with a non-breaking
+  space. The OS's language list comes from Rust (`get_system_languages`,
+  `sys-locale`), because WebViews do not reliably expose it (WebKitGTK
+  follows the C locale, macOS the app bundle's localisations). Text built
+  once uses `live(key)` nodes; changing the language dispatches
+  `locale-changed` and the views render again, without a reload.
+* **Rust**: `i18n.rs` holds the ~20 tray / tooltip / macOS-menu strings
+  (`tr(lang, Key)`, one macro list so both languages are always present);
+  the tray reads the language from the settings on every refresh and
+  relabels itself when it changes, the macOS app menu is rebuilt.
+  `format.rs` only switches the decimal separator (`23,4 W`).
+* **Errors** shown in the panel are `AppError`s (`error.rs`), serialised as
+  `{code, detail, message}`: the panel translates `error.<code>` and
+  inserts the untranslated `detail` (OS error, path); `message` is the
+  English text, used in the logs and for unknown codes.
+* Not translated: CodeCarbon's own warnings ("Notes from CodeCarbon"),
+  hardware names, country names reported by CodeCarbon, and messages
+  coming from the login server or the dashboard API (shown as `detail`).
 
 ## 4. Repository layout
 

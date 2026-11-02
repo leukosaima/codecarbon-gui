@@ -5,6 +5,7 @@
 import {
   errorMessage,
   getEquivalents,
+  type Equivalent,
   openDataFolder,
   restartAgent,
   startTracking,
@@ -17,16 +18,18 @@ import { h, setText, show, spinner, svg } from "../dom";
 import * as fmt from "../format";
 import { cpuMethod, statusLine } from "../format";
 import { best, describe as describeEquivalent } from "../equivalents";
+import { live, liveAttr, n, t, tNodes, type MessageKey } from "../i18n/i18n";
 import { sparkline, WINDOW_SECS } from "../sparkline";
 
 const CHART_W = 300;
 const CHART_H = 64;
 
 /** A big-number tile. */
-function tile(label: string): { root: HTMLElement; value: HTMLElement; sub: HTMLElement } {
+function tile(label: MessageKey): { root: HTMLElement; value: HTMLElement; sub: HTMLElement } {
   const value = h("div", { class: "tile-value" }, "–");
   const sub = h("div", { class: "tile-sub" });
-  const root = h("div", { class: "tile" }, h("div", { class: "tile-label" }, label), value, sub);
+  const labelEl = h("div", { class: "tile-label" }, live(label));
+  const root = h("div", { class: "tile" }, labelEl, value, sub);
   return { root, value, sub };
 }
 
@@ -40,18 +43,17 @@ export class DashboardView {
 
   private readonly banner = h("div", { class: "banner", role: "alert" });
   private readonly bannerText = h("span");
-  private readonly retry = h("button", { class: "btn btn-small", type: "button" }, "Retry");
-  private readonly loading = h(
-    "div",
-    { class: "hint" },
-    spinner(),
-    " Starting the measurement engine…",
+  private readonly retry = h(
+    "button",
+    { class: "btn btn-small", type: "button" },
+    live("dashboard.retry"),
   );
+  private readonly loading = h("div", { class: "hint" }, spinner(), live("common.starting_engine"));
   private readonly button = h("button", { class: "btn btn-primary btn-big", type: "button" });
-  private readonly power = tile("Power");
-  private readonly co2 = tile("CO₂e");
-  private readonly energy = tile("Energy");
-  private readonly duration = tile("Duration");
+  private readonly power = tile("dashboard.power");
+  private readonly co2 = tile("dashboard.co2");
+  private readonly energy = tile("dashboard.energy");
+  private readonly duration = tile("dashboard.duration");
   private readonly chartCard: HTMLElement;
   private readonly chartLine = svg("path", { class: "spark-line" });
   private readonly chartArea = svg("path", { class: "spark-area" });
@@ -64,6 +66,8 @@ export class DashboardView {
   private readonly summaryEquivalent = h("p", { class: "summary-equivalent" });
   /** Run id whose equivalent is shown (or being fetched). */
   private equivalentFor: string | null = null;
+  /** The equivalent shown, phrased again when the language changes. */
+  private equivalent: Equivalent | null = null;
   private readonly details = h("details", { class: "card details" });
   private readonly detailsBody = h("div", { class: "details-body" });
 
@@ -72,13 +76,18 @@ export class DashboardView {
     this.retry.addEventListener("click", () => void this.run(restartAgent));
     this.button.addEventListener("click", () => this.onButton());
 
-    const chart = svg("svg", {
-      class: "spark",
-      viewBox: `0 0 ${CHART_W} ${CHART_H}`,
-      preserveAspectRatio: "none",
-      role: "img",
-      "aria-label": "Total power over the last 5 minutes",
-    });
+    const minutes = WINDOW_SECS / 60;
+    const chart = liveAttr(
+      svg("svg", {
+        class: "spark",
+        viewBox: `0 0 ${CHART_W} ${CHART_H}`,
+        preserveAspectRatio: "none",
+        role: "img",
+      }),
+      "aria-label",
+      "dashboard.chart_label",
+      { minutes },
+    );
     chart.append(this.chartArea, this.chartLine);
     this.chartCard = h(
       "div",
@@ -86,24 +95,33 @@ export class DashboardView {
       h(
         "div",
         { class: "card-head" },
-        h("span", {}, `Power, last ${WINDOW_SECS / 60} min`),
+        h("span", {}, live("dashboard.chart_title", { minutes })),
         this.chartMax,
       ),
       chart,
     );
 
-    const openFolder = h("button", { class: "link", type: "button" }, "Open data folder");
+    const openFolder = h(
+      "button",
+      { class: "link", type: "button" },
+      live("common.open_data_folder"),
+    );
     openFolder.addEventListener("click", () => void this.run(openDataFolder));
     this.summary = h(
       "section",
       { class: "card summary" },
-      h("div", { class: "card-head" }, h("span", {}, "Last session"), openFolder),
+      h(
+        "div",
+        { class: "card-head" },
+        h("span", {}, live("dashboard.last_session")),
+        openFolder,
+      ),
       this.summaryRows,
       this.summaryEquivalent,
     );
     show(this.summaryEquivalent, false);
 
-    this.details.append(h("summary", {}, "How is this measured?"), this.detailsBody);
+    this.details.append(h("summary", {}, live("dashboard.how_measured")), this.detailsBody);
 
     this.root = h(
       "section",
@@ -157,10 +175,10 @@ export class DashboardView {
     if (target) {
       this.uploadChip.append(
         h("span", { "aria-hidden": "true" }, "☁"),
-        " Uploading to ",
-        h("b", {}, target),
+        " ",
+        ...tNodes("dashboard.uploading_to", { target: h("b", {}, target) }),
       );
-      this.uploadChip.title = "Your measurements are sent to the CodeCarbon dashboard.";
+      this.uploadChip.title = t("dashboard.uploading_title");
     }
     show(this.uploadChip, target !== null);
   }
@@ -172,7 +190,7 @@ export class DashboardView {
 
     // Error banner + loading hint.
     show(this.banner, state.error !== null);
-    setText(this.bannerText, state.error ?? "");
+    setText(this.bannerText, state.error ? errorMessage(state.error) : "");
     show(this.retry, phase === "agent_error");
     show(this.loading, state.agent_ready === null && phase !== "agent_error");
 
@@ -181,16 +199,16 @@ export class DashboardView {
     this.button.classList.toggle("btn-stop", phase === "running");
     switch (phase) {
       case "starting":
-        this.button.append(spinner(), " Starting…");
+        this.button.append(spinner(), ` ${t("dashboard.starting")}`);
         break;
       case "stopping":
-        this.button.append(spinner(), " Stopping…");
+        this.button.append(spinner(), ` ${t("dashboard.stopping")}`);
         break;
       case "running":
-        this.button.append("Stop measuring");
+        this.button.append(t("dashboard.stop"));
         break;
       default:
-        this.button.append("Start measuring");
+        this.button.append(t("dashboard.start"));
     }
     this.button.disabled = !(phase === "running" || (phase === "idle" && state.agent_ready));
 
@@ -215,21 +233,21 @@ export class DashboardView {
         .filter(([name, w]) => w > 0 || name === "CPU")
         .map(([name, w]) => `${name} ${fmt.power(w)}`)
         .join(" · ");
-      setText(this.power.sub, summary ? `average · ${breakdown}` : breakdown);
+      setText(this.power.sub, summary ? t("dashboard.average", { breakdown }) : breakdown);
     } else {
       setText(this.power.sub, "");
     }
     setText(this.co2.value, emissions !== undefined ? fmt.co2(emissions) : "–");
     setText(this.energy.value, energy !== undefined ? fmt.energy(energy) : "–");
-    setText(this.co2.sub, rate ? `${fmt.co2(rate * 3600)} per hour` : "");
+    setText(this.co2.sub, rate ? t("dashboard.per_hour", { value: fmt.co2(rate * 3600) }) : "");
     const ci =
       summary?.carbon_intensity_g_per_kwh ??
       m?.carbon_intensity_g_per_kwh ??
       state.location?.carbon_intensity_g_per_kwh ??
       null;
-    setText(this.energy.sub, ci != null ? `grid: ${fmt.intensity(ci)}` : "");
-    for (const t of [this.power, this.co2, this.energy, this.duration]) {
-      t.root.classList.toggle("tile-live", measuring);
+    setText(this.energy.sub, ci != null ? t("dashboard.grid", { value: fmt.intensity(ci) }) : "");
+    for (const box of [this.power, this.co2, this.energy, this.duration]) {
+      box.root.classList.toggle("tile-live", measuring);
     }
     if (m && m.ts !== this.latestTs) {
       this.latestTs = m.ts;
@@ -241,7 +259,10 @@ export class DashboardView {
     const geometry = sparkline(state.history, CHART_W, CHART_H);
     this.chartLine.setAttribute("d", geometry.line);
     this.chartArea.setAttribute("d", geometry.area);
-    setText(this.chartMax, geometry.line ? `max ${fmt.power(geometry.max)}` : "");
+    setText(
+      this.chartMax,
+      geometry.line ? t("dashboard.chart_max", { value: fmt.power(geometry.max) }) : "",
+    );
     show(this.chartCard, state.history.length > 1);
 
     // Status line.
@@ -253,13 +274,16 @@ export class DashboardView {
     show(this.summary, summary !== null);
     if (summary) {
       const rows: [string, string][] = [
-        ["Duration", fmt.duration(summary.duration_s)],
-        ["Energy", fmt.energy(summary.energy_kwh.total)],
-        ["CO₂e", fmt.co2(summary.emissions_kg)],
-        ["Average power", fmt.power(summary.avg_power_w.total)],
+        [t("dashboard.duration"), fmt.duration(summary.duration_s)],
+        [t("dashboard.energy"), fmt.energy(summary.energy_kwh.total)],
+        [t("dashboard.co2"), fmt.co2(summary.emissions_kg)],
+        [t("dashboard.average_power"), fmt.power(summary.avg_power_w.total)],
       ];
       if (summary.carbon_intensity_g_per_kwh != null) {
-        rows.push(["Grid intensity", fmt.intensity(summary.carbon_intensity_g_per_kwh)]);
+        rows.push([
+          t("dashboard.grid_intensity"),
+          fmt.intensity(summary.carbon_intensity_g_per_kwh),
+        ]);
       }
       this.summaryRows.replaceChildren(
         ...rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]),
@@ -272,18 +296,26 @@ export class DashboardView {
 
   /** One everyday equivalent of the session (factors from Rust). */
   private renderEquivalent(runId: string, emissionsKg: number, energyKwh: number): void {
-    if (this.equivalentFor === runId) return;
+    if (this.equivalentFor === runId) {
+      this.showEquivalent(); // same session; maybe another language
+      return;
+    }
     this.equivalentFor = runId;
+    this.equivalent = null;
     show(this.summaryEquivalent, false);
     getEquivalents(emissionsKg, energyKwh)
       .then((list) => {
         if (this.equivalentFor !== runId) return;
-        const eq = best(list);
-        const text = eq ? describeEquivalent(eq) : null;
-        setText(this.summaryEquivalent, text ?? "");
-        show(this.summaryEquivalent, text !== null);
+        this.equivalent = best(list);
+        this.showEquivalent();
       })
       .catch((e: unknown) => console.warn("get_equivalents failed", e));
+  }
+
+  private showEquivalent(): void {
+    const text = this.equivalent ? describeEquivalent(this.equivalent) : null;
+    setText(this.summaryEquivalent, text ?? "");
+    show(this.summaryEquivalent, text !== null);
   }
 
   private renderDuration(): void {
@@ -303,25 +335,37 @@ export class DashboardView {
     }
     setText(this.duration.value, fmt.duration(seconds));
     const util = m.cpu_utilization_percent;
-    setText(this.duration.sub, util != null ? `CPU load ${util.toFixed(0)} %` : "");
+    setText(
+      this.duration.sub,
+      util != null ? t("dashboard.cpu_load", { value: fmt.decimal(util, 0) }) : "",
+    );
   }
 
   private renderDetails(state: TrackerState): void {
     const hw = state.hardware;
     const items: HTMLElement[] = [];
     if (hw) {
-      const cpu = [hw.cpu_model, hw.cpu_count ? `${hw.cpu_count} threads` : null]
-        .filter(Boolean)
-        .join(", ");
-      items.push(h("li", {}, h("b", {}, "CPU: "), `${cpu || "unknown model"} — ${cpuMethod(hw)}`));
+      const threads = hw.cpu_count ? n("details.threads", hw.cpu_count) : null;
+      const cpu = [hw.cpu_model, threads].filter(Boolean).join(", ");
+      items.push(
+        h(
+          "li",
+          {},
+          h("b", {}, t("details.cpu")),
+          `${cpu || t("details.unknown_model")} — ${cpuMethod(hw)}`,
+        ),
+      );
       if (hw.cpu_tdp_is_generic) {
-        items.push(
-          h("li", {}, "Your CPU model is not in CodeCarbon's database: a generic TDP is used."),
-        );
+        items.push(h("li", {}, t("details.generic_tdp")));
       }
       if (hw.gpu_count && hw.gpu_count > 0) {
         items.push(
-          h("li", {}, h("b", {}, "GPU: "), `${hw.gpu_model ?? "unknown"} — ${hw.gpu_method ?? "?"}`),
+          h(
+            "li",
+            {},
+            h("b", {}, t("details.gpu")),
+            `${hw.gpu_model ?? t("details.unknown")} — ${hw.gpu_method ?? "?"}`,
+          ),
         );
       }
       if (hw.ram_total_gb != null) {
@@ -329,8 +373,11 @@ export class DashboardView {
           h(
             "li",
             {},
-            h("b", {}, "RAM: "),
-            `${hw.ram_total_gb.toFixed(1)} GB — ${hw.ram_method ?? "estimate"}`,
+            h("b", {}, t("details.ram")),
+            t("details.ram_value", {
+              value: fmt.decimal(hw.ram_total_gb, 1),
+              method: hw.ram_method ?? t("details.ram_estimate"),
+            }),
           ),
         );
       }
@@ -345,26 +392,21 @@ export class DashboardView {
         h(
           "li",
           {},
-          h("b", {}, "Electricity: "),
-          `${where || "unknown location"}${ci != null ? ` — ${fmt.intensity(ci)}` : ""}`,
+          h("b", {}, t("details.electricity")),
+          `${where || t("details.unknown_location")}${ci != null ? ` — ${fmt.intensity(ci)}` : ""}`,
         ),
       );
     }
-    const notes = state.notes.map((n) => h("li", { class: "note" }, n));
-    const intro = h(
-      "p",
-      {},
-      "CodeCarbon estimates the power of your CPU, GPU and RAM, multiplies the energy by the " +
-        "carbon intensity of your country's electricity grid, and reports CO₂-equivalent emissions.",
-    );
+    // CodeCarbon's own warnings are shown as it wrote them (English).
+    const notes = state.notes.map((note) => h("li", { class: "note", lang: "en" }, note));
     const children: HTMLElement[] = [
-      intro,
+      h("p", {}, t("details.intro")),
       items.length
         ? h("ul", {}, ...items)
-        : h("p", { class: "muted" }, "Start a measurement to see your hardware."),
+        : h("p", { class: "muted" }, t("details.no_hardware")),
     ];
     if (notes.length) {
-      children.push(h("p", { class: "muted" }, "Notes from CodeCarbon:"));
+      children.push(h("p", { class: "muted" }, t("details.notes")));
       children.push(h("ul", { class: "notes" }, ...notes));
     }
     this.detailsBody.replaceChildren(...children);

@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Hardware, Location } from "./api";
+import { setLocale } from "./i18n/i18n";
 import {
   co2,
   cpuMethod,
@@ -12,9 +13,12 @@ import {
   intensity,
   parseLocal,
   power,
+  round3,
   sig3,
   statusLine,
 } from "./format";
+
+const NB = "\u00a0";
 
 // Same cases as src-tauri/src/format.rs.
 describe("sig3", () => {
@@ -149,8 +153,8 @@ describe("dates (local time, no offset)", () => {
     expect(formatDay("", "en-GB")).toBe("–");
   });
 
-  it("uses the system locale by default", () => {
-    const expected = new Intl.DateTimeFormat(undefined, {
+  it("uses the current language by default", () => {
+    const expected = new Intl.DateTimeFormat("en", {
       weekday: "short",
       day: "numeric",
       month: "short",
@@ -168,5 +172,48 @@ describe("durationShort", () => {
     expect(durationShort(3 * 3600 + 5 * 60)).toBe("3 h 5 min");
     expect(durationShort(26 * 3600)).toBe("26 h");
     expect(durationShort(-1)).toBe("–");
+  });
+});
+
+describe("French", () => {
+  afterEach(() => {
+    setLocale("en", []);
+  });
+
+  it("uses a decimal comma and a non-breaking space before the unit", () => {
+    expect(sig3(0.8432, "fr")).toBe("0,843");
+    expect(sig3(123.4, "fr")).toBe("123");
+    expect(power(1.5, "fr")).toBe(`1,5${NB}W`);
+    expect(power(23.44, "fr-FR")).toBe(`23,4${NB}W`);
+    expect(energy(0.0123, "fr")).toBe(`12,30${NB}Wh`);
+    expect(energy(1.2, "fr")).toBe(`1,20${NB}kWh`);
+    expect(co2(0.00084, "fr")).toBe(`0,84${NB}g`);
+    expect(co2(1.234, "fr-CA")).toBe(`1,23${NB}kg`);
+    expect(intensity(56.4, "fr")).toBe(`56${NB}g/kWh`);
+    expect(power(Number.NaN, "fr")).toBe("–");
+  });
+
+  it("never groups digits (same as the tray)", () => {
+    expect(power(12345.6, "fr")).toBe(`12345,6${NB}W`);
+    expect(power(12345.6, "en")).toBe("12345.6 W");
+  });
+
+  it("follows the current language", () => {
+    setLocale("fr", ["fr-FR"]);
+    expect(power(1.5)).toBe(`1,5${NB}W`);
+    expect(durationShort(3 * 3600 + 5 * 60)).toBe(`3${NB}h 5${NB}min`);
+    expect(statusLine(hw({ gpu_method: "nvml", gpu_count: 1 }), france, null)).toBe(
+      `CPU${NB}: estimé d'après la charge (TDP 28${NB}W) · GPU${NB}: NVML · France · 56${NB}g/kWh`,
+    );
+    expect(formatDay("2026-11-02")).toBe("lun. 2 nov.");
+    setLocale("en", ["en-GB"]);
+    expect(formatDay("2026-11-02")).toBe("Mon 2 Nov");
+    expect(power(1.5)).toBe("1.5 W");
+  });
+
+  it("rounds like toFixed", () => {
+    expect(round3(1.0004)).toBe(1);
+    expect(round3(2.456)).toBe(2.46);
+    expect(round3(Number.NaN)).toBe(0);
   });
 });
