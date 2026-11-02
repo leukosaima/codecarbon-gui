@@ -4,6 +4,9 @@
   so signals (SIGTERM / SIGINT) are noticed promptly even while stdin blocks.
 * While a tracker runs, a sampling thread emits a ``measurement`` every
   ``interval_secs`` (on a fixed schedule, independent of the stdin loop).
+* The ``auth_*`` / ``api_*`` commands (protocol v2) run one at a time, in
+  order, on an "account" worker thread, so network calls never delay the
+  stdin loop nor the sampler.
 * No exception ever kills the loop: it is reported as ``error(internal)``.
 """
 
@@ -24,6 +27,7 @@ from typing import Any, Protocol
 
 from .protocol import (
     ALREADY_RUNNING,
+    AUTH_UNAVAILABLE,
     BAD_COMMAND,
     INTERNAL,
     NOT_RUNNING,
@@ -52,8 +56,29 @@ IGNORED_LOG_PREFIXES = (
 )
 
 
+ACCOUNT_COMMANDS = frozenset(
+    {
+        "auth_start",
+        "auth_cancel",
+        "auth_status",
+        "auth_logout",
+        "api_catalog",
+        "api_create",
+        "api_key",
+    }
+)
+
+
 class LineSource(Protocol):
     def readline(self) -> str: ...
+
+
+class AccountHandler(Protocol):
+    """What the runner needs from :class:`~codecarbon_agent.dashboard.AccountService`."""
+
+    def handle(self, message: dict[str, Any]) -> None: ...
+
+    def shutdown(self) -> None: ...
 
 
 def format_record(record: logging.LogRecord) -> str:
@@ -100,6 +125,17 @@ def _prewarm_codecarbon() -> None:
         pass
 
 
+def _default_account_factory(
+    credentials_path: str | os.PathLike[str],
+) -> Callable[[Callable[[Mapping[str, Any]], Any]], AccountHandler]:
+    def factory(emit: Callable[[Mapping[str, Any]], Any]) -> AccountHandler:
+        from .dashboard import AccountService  # authlib / requests: only when needed
+
+        return AccountService(credentials_path, emit)
+
+    return factory
+
+
 class Runner:
     """Serves the protocol until ``quit``, EOF on stdin or a termination signal."""
 
@@ -115,6 +151,9 @@ class Runner:
         stop_timeout_secs: float = 30.0,
         signal_grace_secs: float = 10.0,
         eof_grace_secs: float = 20.0,
+        credentials_path: str | os.PathLike[str] | None = None,
+        account_factory: Callable[[Callable[[Mapping[str, Any]], Any]], AccountHandler]
+        | None = None,
     ) -> None:
         self._stdin = stdin
         self._writer = writer
@@ -137,6 +176,12 @@ class Runner:
         self._reader: threading.Thread | None = None
         self._log_handler = ProtocolLogHandler(self._emit)
         self._previous_signals: dict[int, Any] = {}
+        if account_factory is None and credentials_path is not None:
+            account_factory = _default_account_factory(credentials_path)
+        self._account_factory = account_factory
+        self._account: AccountHandler | None = None
+        self._account_queue: queue.Queue[dict[str, Any] | None] = queue.Queue()
+        self._account_thread: threading.Thread | None = None
 
     # ----------------------------------------------------------------- public
 
@@ -288,6 +333,7 @@ class Runner:
             "stop": self._cmd_stop,
             "status": self._cmd_status,
             "quit": self._cmd_quit,
+            **{name: self._cmd_account for name in ACCOUNT_COMMANDS},
         }
         handler = handlers.get(cmd) if isinstance(cmd, str) else None
         if handler is None:
@@ -332,10 +378,59 @@ class Runner:
     def _cmd_quit(self, message: dict[str, Any]) -> bool:
         return False
 
+    # ----------------------------------------------------------------- account (v2)
+
+    def _cmd_account(self, message: dict[str, Any]) -> bool:
+        if self._account_factory is None:
+            self._error(
+                AUTH_UNAVAILABLE, "no credentials file: start the agent with --credentials <path>"
+            )
+            return True
+        if self._account_thread is None:
+            self._account_thread = threading.Thread(
+                target=self._account_loop, name="account", daemon=True
+            )
+            self._account_thread.start()
+        self._account_queue.put(message)
+        return True
+
+    def _account_loop(self) -> None:
+        while True:
+            message = self._account_queue.get()
+            if message is None:
+                return
+            try:
+                if self._account is None:
+                    assert self._account_factory is not None
+                    self._account = self._account_factory(self._emit)
+                self._account.handle(message)
+            except Exception as exc:  # noqa: BLE001 - the worker must survive
+                traceback.print_exc(file=sys.stderr)
+                self._error(INTERNAL, f"{type(exc).__name__}: {exc}")
+
+    def _shutdown_account(self, timeout: float = 2.0) -> None:
+        """Cancel a pending login (frees the port) and stop the worker."""
+        thread = self._account_thread
+        if thread is None:
+            return
+        self._account_queue.put(None)
+        account = self._account
+        if account is not None:
+            account.shutdown()
+        thread.join(timeout)
+        account = self._account  # created meanwhile by a queued command
+        if account is not None:
+            account.shutdown()
+
     # ----------------------------------------------------------------- run lifecycle
 
     def _shutdown(self) -> None:
         """Stop a running tracker (emits ``stopped``); used by quit / EOF / signals."""
+        try:
+            self._shutdown_account()
+        except Exception as exc:  # noqa: BLE001
+            traceback.print_exc(file=sys.stderr)
+            self._error(INTERNAL, f"{type(exc).__name__}: {exc}")
         try:
             if self._session.running:
                 self._stop_running()

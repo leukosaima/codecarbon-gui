@@ -191,7 +191,37 @@ They never block the measurement loop (run on their own thread).
 {"event":"api_created","ts":"…","kind":"project","item":{"id":"…","name":"…","parent_id":"…"}}
 {"event":"api_key","ts":"…","project_id":"…","api_key":"…"}
 ```
-`user` is taken from the ID token / `GET /auth/check` (fields may be `null`).
+`user` is taken from `GET /auth/check` (which also creates the dashboard
+account on first call), falling back to the ID token claims; fields may be
+`null`.
+
+Details of the implemented behaviour:
+
+* `auth_result` shapes: success `{ok:true, user}`; failure
+  `{ok:false, cancelled:false, code:"auth_failed", message}`; cancel
+  `{ok:false, cancelled:true, message:"login cancelled"}`. The 5-minute
+  timeout is a failure with message "no answer from the browser after 5 min,
+  login abandoned".
+* If `auth_start` fails before a URL exists (provider unreachable, port 8090
+  busy) there is **no** `auth_url`, only the `auth_result`.
+* If `GET /auth/check` fails after the code exchange the login fails and
+  nothing is saved.
+* A `401` from the API is reported as `error(not_logged_in)`; other HTTP /
+  network failures as `error(api_error)` with messages like
+  `HTTP <status>: <detail>` or `cannot reach the CodeCarbon API: …`.
+* Token refresh: only a refusal from the token endpoint (4xx) deletes the
+  credentials. A network failure keeps them: `auth_status` still answers
+  `logged_in: true` with the cached user and `api_*` commands reply
+  `api_error`, so going offline does not sign the user out.
+* Catalog items also carry `description`; `api_created.item.parent_id` is
+  `null` for an organisation. Creating an organisation whose name already
+  exists returns the existing one (CodeCarbon library behaviour).
+* Invalid `api_create` fields or a missing `api_key.project_id` give
+  `error(bad_command)`. `description` defaults to `""`.
+* `auth_cancel` is queued behind any account command already running (at
+  most ~15 s, the API timeout); `quit`/EOF cancel a pending login at once.
+* The credentials file holds the token response plus a cached `user`
+  object, so `auth_status` needs no network while the token is valid.
 
 ### Errors
 
