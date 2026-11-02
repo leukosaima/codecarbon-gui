@@ -41,6 +41,8 @@ pub struct AppCore {
     /// "Start measuring on launch" is honoured once, on the first `ready`.
     launch_start_done: AtomicBool,
     quitting: AtomicBool,
+    /// Set by [`stop_before_exit`]: the process is going down right now.
+    exiting: AtomicBool,
 }
 
 /// Recover the data of a poisoned mutex instead of panicking.
@@ -64,6 +66,7 @@ impl AppCore {
             tray: Mutex::new(None),
             launch_start_done: AtomicBool::new(false),
             quitting: AtomicBool::new(false),
+            exiting: AtomicBool::new(false),
         }
     }
 
@@ -94,6 +97,11 @@ pub fn spawn(app: &AppHandle, f: impl FnOnce(&AppHandle) + Send + 'static) {
 /// Send the current state to the panel and refresh the tray.
 pub fn publish(app: &AppHandle) {
     let core = app.state::<AppCore>();
+    if core.exiting.load(Ordering::SeqCst) {
+        // The main thread is busy in `stop_before_exit`; tray and webview
+        // calls would wait for it and deadlock the agent reader.
+        return;
+    }
     let snapshot = core.tracker().clone();
     if let Err(e) = app.emit(STATE_EVENT, &snapshot) {
         log::warn!("cannot emit {STATE_EVENT}: {e}");
@@ -231,7 +239,9 @@ pub fn toggle_panel_at_tray(app: &AppHandle) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
         return;
     };
-    if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
+    // Plain toggle on visibility: on Windows the taskbar takes the focus
+    // before the click reaches us, so `is_focused()` is never true here.
+    if window.is_visible().unwrap_or(false) {
         let _ = window.hide();
         return;
     }
@@ -294,6 +304,57 @@ pub fn quit(app: &AppHandle) {
         log::info!("bye");
         app.exit(0);
     });
+}
+
+/// Last-chance, *blocking* stop for exits that bypass [`quit`]: Cmd+Q and
+/// logout on macOS, logoff/shutdown on Windows, all of which only deliver
+/// `RunEvent::Exit` on the main thread. Stops the measurement (≤ 2 s, so
+/// the session is written to the CSV), asks the agent to quit (≤ 1.5 s),
+/// then kills it synchronously. A no-op when the graceful quit already ran.
+pub fn stop_before_exit(app: &AppHandle) {
+    let core = app.state::<AppCore>();
+    if core.is_quitting() {
+        core.agent.kill_sync();
+        return;
+    }
+    core.quitting.store(true, Ordering::SeqCst);
+    core.exiting.store(true, Ordering::SeqCst);
+    let phase = core.tracker().phase;
+    if matches!(phase, Phase::Starting | Phase::Running | Phase::Stopping) {
+        log::info!("exit: stopping the running measurement");
+        if phase != Phase::Stopping && core.agent.send(&AgentCommand::Stop).is_ok() {
+            core.tracker().begin_stop();
+        }
+        let stopped = wait_until_blocking(EXIT_STOP_TIMEOUT, || {
+            !matches!(core.tracker().phase, Phase::Stopping | Phase::Starting)
+        });
+        if !stopped {
+            log::warn!("exit: no `stopped` within {EXIT_STOP_TIMEOUT:?}");
+        }
+    }
+    core.agent.begin_shutdown();
+    if core.agent.send(&AgentCommand::Quit).is_ok() {
+        wait_until_blocking(EXIT_QUIT_TIMEOUT, || !core.agent.is_alive());
+    }
+    core.agent.kill_sync();
+}
+
+/// How long [`stop_before_exit`] waits for `stopped`, then for the exit.
+const EXIT_STOP_TIMEOUT: Duration = Duration::from_secs(2);
+const EXIT_QUIT_TIMEOUT: Duration = Duration::from_millis(1500);
+
+/// Blocking twin of [`wait_until`] for the main thread on the way out.
+fn wait_until_blocking(timeout: Duration, condition: impl Fn() -> bool) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if condition() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }
 
 /// Poll `condition` every 50 ms until it is true or `timeout` elapses.

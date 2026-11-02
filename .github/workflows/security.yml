@@ -1,0 +1,61 @@
+name: Dependency audit
+
+# Checks the three lock files against the RustSec, PyPI and npm advisory
+# databases on every change and once a week (new advisories, same code).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "41 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: cargo audit (Rust)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-audit
+      # Fails on vulnerabilities. "unmaintained"/"unsound" notices (today: glib 0.18
+      # and zvariant pulled in by Tauri's GTK / D-Bus stack) are printed but do not fail.
+      - run: cargo audit
+        working-directory: src-tauri
+
+  python:
+    name: pip-audit (Python sidecar)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install what ships in the sidecar (CodeCarbon + PyInstaller)
+        # Not our own package: it is not on PyPI, and pip-audit --strict refuses
+        # anything it cannot look up. It has no dependencies besides codecarbon.
+        run: python -m pip install "codecarbon>=3.3" pyinstaller pip-audit
+      - name: Audit the installed environment
+        run: pip-audit --strict --desc on
+
+  npm:
+    name: npm audit (front-end / Tauri CLI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Audit production dependencies (what ships in the app)
+        run: npm audit --omit=dev --audit-level=low
+      - name: Audit development dependencies (build tooling)
+        run: npm audit --audit-level=high

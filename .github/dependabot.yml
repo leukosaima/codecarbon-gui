@@ -1,0 +1,30 @@
+# Keeps every dependency ecosystem of the project up to date and surfaces
+# security advisories (Dependabot alerts must be enabled in the repository's
+# Settings → Code security, see SECURITY.md).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    groups:
+      actions: { patterns: ["*"] }
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule: { interval: weekly, day: monday }
+    groups:
+      tauri: { patterns: ["tauri*"] }
+      rust-minor: { update-types: ["minor", "patch"] }
+
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    groups:
+      tauri: { patterns: ["@tauri-apps/*"] }
+      npm-minor: { update-types: ["minor", "patch"] }
+
+  - package-ecosystem: pip
+    directory: /agent
+    schedule: { interval: weekly, day: monday }
+    groups:
+      python-minor: { update-types: ["minor", "patch"] }

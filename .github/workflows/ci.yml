@@ -2,10 +2,14 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
-    tags-ignore: ["v*"]
+    branches: [main]
+    paths-ignore: ["docs/**", "**.md", ".github/dependabot.yml"]
   pull_request:
+    paths-ignore: ["docs/**", "**.md", ".github/dependabot.yml"]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -150,6 +154,20 @@ jobs:
       - name: tauri build
         run: npm run tauri -- build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
+      - name: Verify the macOS bundle is signed (ad-hoc) and sealed
+        if: runner.os == 'macOS'
+        run: |
+          # Tauri removes the .app once the DMG is packed: inspect the DMG.
+          dmg=$(find src-tauri/target -path '*/release/bundle/dmg/*.dmg' -type f | head -1)
+          echo "dmg: $dmg"
+          mount=$(hdiutil attach -nobrowse -readonly "$dmg" | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -1)
+          app=$(find "$mount" -maxdepth 1 -name '*.app' | head -1)
+          echo "bundle: $app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -E 'Identifier|Signature|TeamIdentifier|flags'
+          codesign --verify --verbose=2 "$app/Contents/MacOS/codecarbon-agent"
+          plutil -extract LSUIElement raw "$app/Contents/Info.plist"
+          hdiutil detach "$mount"
       - name: Collect bundles
         shell: bash
         run: |

@@ -6,10 +6,6 @@
   "permissions": [
     "core:default",
     {
-      "identifier": "shell:allow-spawn",
-      "allow": [{ "name": "binaries/codecarbon-agent", "sidecar": true, "args": ["--version", "--selftest"] }]
-    },
-    {
       "identifier": "opener:allow-open-url",
       "allow": [{ "url": "https://*" }]
     },

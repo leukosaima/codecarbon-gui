@@ -35,6 +35,9 @@ const BACKOFF: [Duration; 3] = [
 /// A process that ran at least this long resets the failure counter.
 const STABLE_AFTER: Duration = Duration::from_secs(60);
 
+/// How long a `restart` lets the old process exit by itself before killing it.
+const RESTART_GRACE: Duration = Duration::from_millis(1500);
+
 /// What the supervisor reports to the rest of the app.
 #[derive(Debug, Clone)]
 pub enum AgentSignal {
@@ -104,8 +107,12 @@ impl AgentHandle {
         async_runtime::spawn(async move { this.supervise(generation).await });
     }
 
-    /// Kill the current process (if any) and start again with a fresh
+    /// Stop the current process (if any) and start again with a fresh
     /// failure counter. Used by the "Retry" button.
+    ///
+    /// The old process is first asked to `quit` and given a moment to exit
+    /// on its own: a killed PyInstaller one-file binary leaves its ~100 MB
+    /// extraction folder behind in the temp directory.
     pub fn restart(&self) {
         let old = {
             let mut inner = self.lock();
@@ -113,10 +120,17 @@ impl AgentHandle {
             inner.ready = None;
             inner.child.take()
         };
-        if let Some(child) = old {
-            kill_child(child);
-        }
-        self.start();
+        let this = self.clone();
+        async_runtime::spawn(async move {
+            if let Some(mut child) = old {
+                let asked = child.write(AgentCommand::Quit.to_line().as_bytes()).is_ok();
+                if asked {
+                    tokio::time::sleep(RESTART_GRACE).await;
+                }
+                kill_child(child);
+            }
+            this.start();
+        });
     }
 
     /// Write one command on the agent's stdin.
@@ -154,6 +168,23 @@ impl AgentHandle {
         };
         if let Some(child) = child {
             kill_child(child);
+        }
+    }
+
+    /// Like [`AgentHandle::kill`] but waits for the kill to be delivered.
+    /// Used on the way out of the process, where a background thread would
+    /// not get the chance to run.
+    pub fn kill_sync(&self) {
+        let child = {
+            let mut inner = self.lock();
+            inner.shutting_down = true;
+            inner.child.take()
+        };
+        if let Some(child) = child {
+            let pid = child.pid();
+            if let Err(e) = child.kill() {
+                log::debug!("killing agent pid {pid}: {e}");
+            }
         }
     }
 

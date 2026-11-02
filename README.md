@@ -49,6 +49,12 @@ v0.1: measures and displays; installers for the three platforms are built by
 CI. Next: CodeCarbon API login and upload, history, auto-update — see
 [docs/ROADMAP.md](docs/ROADMAP.md).
 
+## Security
+
+No telemetry, no admin rights, network only when you ask for it. Dependencies
+are audited and scanned by CodeQL on every change, and every release ships
+checksums and build-provenance attestations. Details in [SECURITY.md](SECURITY.md).
+
 ## Licence
 
 MIT — see [LICENSE](LICENSE).

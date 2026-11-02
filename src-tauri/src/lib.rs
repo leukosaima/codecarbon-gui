@@ -28,12 +28,16 @@ use crate::agent::AgentHandle;
 use crate::controller::AppCore;
 use crate::settings::Settings;
 
+/// Id of the "Quit CodeCarbon" item of the macOS app menu.
+#[cfg(target_os = "macos")]
+const APP_QUIT_ID: &str = "app-quit";
+
 /// Entry point (called by `main.rs`).
 pub fn run() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     log::info!("CodeCarbon {} starting", env!("CARGO_PKG_VERSION"));
 
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // Must be the first plugin: a second launch just shows the panel.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             controller::spawn(app, |app| controller::show_panel(app, None));
@@ -44,7 +48,41 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_positioner::init())
+        .plugin(tauri_plugin_positioner::init());
+
+    // macOS: Tauri's default app menu has a "Quit" that terminates the
+    // process at once (no `ExitRequested`). Ours stops the measurement
+    // first. Windows/Linux get no app menu (it would be a menu bar).
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .menu(|app| {
+            use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+            let quit = MenuItem::with_id(
+                app,
+                APP_QUIT_ID,
+                "Quit CodeCarbon",
+                true,
+                Some("CmdOrCtrl+Q"),
+            )?;
+            let app_menu = Submenu::with_items(
+                app,
+                "CodeCarbon",
+                true,
+                &[
+                    &PredefinedMenuItem::hide(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &quit,
+                ],
+            )?;
+            Menu::with_items(app, &[&app_menu])
+        })
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == APP_QUIT_ID {
+                controller::quit(app);
+            }
+        });
+
+    let app = builder
         .invoke_handler(tauri::generate_handler![
             commands::get_state,
             commands::start_tracking,
@@ -88,7 +126,15 @@ pub fn run() {
                 api.prevent_exit();
                 controller::quit(app);
             }
-            RunEvent::Exit => core.agent.kill(),
+            // Cmd+Q / logout (macOS) and logoff / shutdown (Windows) skip
+            // `ExitRequested` and land here: stop the measurement, blocking.
+            RunEvent::Exit => controller::stop_before_exit(app),
+            // macOS: the app was launched again from Finder / Spotlight /
+            // Launchpad while running (no second process is started).
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen { .. } => {
+                controller::spawn(app, |app| controller::show_panel(app, None))
+            }
             _ => {}
         }
     });

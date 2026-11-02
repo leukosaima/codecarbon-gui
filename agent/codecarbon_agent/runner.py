@@ -47,6 +47,8 @@ IGNORED_LOG_PREFIXES = (
     "Multiple instances of codecarbon are allowed",
     "graceful shutdown. Exceptions:",
     "stopping.",
+    # macOS has no lscpu; CodeCarbon warns and falls back to 1 physical CPU
+    "Error while trying to count physical CPUs",
 )
 
 
