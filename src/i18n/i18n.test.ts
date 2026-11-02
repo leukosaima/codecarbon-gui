@@ -80,6 +80,35 @@ describe("message tables", () => {
   });
 });
 
+describe("first-run card and notification texts", () => {
+  const keys = [
+    "welcome.title",
+    "welcome.tray",
+    "welcome.start",
+    "welcome.privacy",
+    "welcome.gnome",
+    "welcome.dismiss",
+    "settings.notify_on_stop",
+  ] as const;
+
+  it("exist in both languages", () => {
+    for (const key of keys) {
+      expect(en, key).toHaveProperty(key);
+      expect(fr, key).toHaveProperty(key);
+    }
+  });
+
+  it("put the Start button's label in the start line", () => {
+    expect(placeholders(en["welcome.start"])).toEqual(["start"]);
+    expect(t("welcome.start", { start: t("dashboard.start") })).toContain("Press Start measuring");
+    setLocale("fr", ["fr-FR"]);
+    expect(t("welcome.start", { start: t("dashboard.start") })).toContain(
+      "Appuyez sur Démarrer la mesure",
+    );
+    expect(t("settings.notify_on_stop")).toBe("Me prévenir à la fin d'une mesure");
+  });
+});
+
 describe("t / n", () => {
   it("interpolates named placeholders", () => {
     expect(t("dashboard.per_hour", { value: "3 g" })).toBe("3 g per hour");

@@ -174,6 +174,20 @@ pub fn load(path: &Path) -> anyhow::Result<History> {
     })
 }
 
+/// `true` when `emissions.csv` holds at least one readable session (the
+/// Dashboard's first-run card). Stops at the first one; any problem → `false`.
+pub fn has_sessions(path: &Path) -> bool {
+    File::open(path).is_ok_and(has_sessions_in)
+}
+
+fn has_sessions_in<R: Read>(reader: R) -> bool {
+    csv::ReaderBuilder::new()
+        .trim(csv::Trim::All)
+        .from_reader(reader)
+        .deserialize::<RawRow>()
+        .any(|row| row.ok().and_then(RawRow::into_session).is_some())
+}
+
 // ---------------------------------------------------------------------------
 // Aggregation
 // ---------------------------------------------------------------------------
@@ -403,6 +417,15 @@ mod tests {
             project_name: "p".into(),
             run_id: started.into(),
         }
+    }
+
+    #[test]
+    fn has_sessions_stops_at_the_first_readable_row() {
+        assert!(!has_sessions_in(csv_of(&[]).as_bytes()), "header only");
+        assert!(!has_sessions_in("".as_bytes()), "empty file");
+        assert!(!has_sessions_in(csv_of(&["garbage"]).as_bytes()));
+        assert!(has_sessions_in(csv_of(&["garbage", REAL_ROW]).as_bytes()));
+        assert!(!has_sessions(Path::new("/nonexistent/emissions.csv")));
     }
 
     #[test]

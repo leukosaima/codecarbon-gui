@@ -37,13 +37,25 @@ export const en = {
   "dashboard.last_session": "Last session",
   "dashboard.average_power": "Average power",
   "dashboard.grid_intensity": "Grid intensity",
-  "dashboard.average": "average · {breakdown}",
+  "dashboard.average": "average",
   "dashboard.per_hour": "{value} per hour",
   "dashboard.grid": "grid: {value}",
   "dashboard.cpu_load": "CPU load {value} %",
   "dashboard.uploading_to": "Uploading to {target}",
   "dashboard.uploading_title": "Your measurements are sent to the CodeCarbon dashboard.",
   "dashboard.how_measured": "How is this measured?",
+
+  // --- First-run welcome card (Dashboard) ------------------------------------
+  "welcome.title": "Welcome to CodeCarbon",
+  "welcome.tray":
+    "CodeCarbon lives in your menu bar / system tray: close this window and it keeps running.",
+  "welcome.start":
+    "Press {start} to see your computer's power and CO₂e. " +
+    "Stop whenever you like: each session is saved in History.",
+  "welcome.privacy":
+    "Nothing leaves your computer unless you connect a dashboard account in Settings.",
+  "welcome.gnome": "On GNOME, install the AppIndicator extension to see the tray icon.",
+  "welcome.dismiss": "Got it",
 
   // --- "How is this measured?" -------------------------------------------
   "details.intro":
@@ -137,6 +149,7 @@ export const en = {
   "settings.save_csv_help": "Append every session to emissions.csv",
   "settings.start_on_launch": "Start measuring on launch",
   "settings.launch_at_login": "Launch at login",
+  "settings.notify_on_stop": "Notify me when a measurement stops",
   "settings.pue": "PUE (optional)",
   "settings.pue_help": "Power usage effectiveness, for servers in a datacenter.",
   "settings.ci": "Carbon intensity override (g/kWh, optional)",

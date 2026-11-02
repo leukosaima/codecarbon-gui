@@ -9,9 +9,9 @@
 //! * [`controller`] – actions shared by the tray and the panel
 //! * [`tray`]       – tray icon, menu, tooltip
 //! * [`commands`]   – `#[tauri::command]` API for the panel
-//! * [`format`]     – number formatting for the tray
+//! * [`format`]     – number formatting for the tray and notifications
 //! * [`history`]    – past sessions from `emissions.csv`, totals, equivalents
-//! * [`i18n`]       – tray / menu strings in English and French
+//! * [`i18n`]       – tray / menu / notification strings in English and French
 //! * [`error`]      – errors sent to the panel as translatable codes
 
 pub mod agent;
@@ -82,7 +82,10 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_positioner::init());
+        .plugin(tauri_plugin_positioner::init())
+        // "Measurement stopped" notifications, sent from Rust only (the
+        // panel has no notification permission).
+        .plugin(tauri_plugin_notification::init());
 
     // macOS: Tauri's default app menu has a "Quit" that terminates the
     // process at once (no `ExitRequested`). Ours stops the measurement
@@ -115,6 +118,7 @@ pub fn run() {
             commands::save_settings,
             commands::open_data_folder,
             commands::get_history,
+            commands::get_first_run_info,
             commands::get_equivalents,
             commands::open_url,
             commands::quit_app,

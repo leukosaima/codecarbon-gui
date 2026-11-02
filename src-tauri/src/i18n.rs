@@ -1,4 +1,5 @@
-//! Languages of the tray, the macOS app menu and the tooltips (the panel
+//! Languages of the tray, the macOS app menu, the tooltips and the
+//! "measurement stopped" notification (the panel
 //! has its own tables in `src/i18n/`). English is the default and the
 //! fallback; French is the only other language for now.
 //!
@@ -132,6 +133,9 @@ messages! {
     TooltipUnavailable => "CodeCarbon — measurement engine unavailable",
         "CodeCarbon — moteur de mesure indisponible";
     TooltipLoading => "CodeCarbon — loading…", "CodeCarbon — chargement…";
+    NotifyTitle => "CodeCarbon", "CodeCarbon";
+    // Duration, energy, CO₂e of the session that just stopped.
+    NotifyStopped => "Session: {} · {} · {} CO₂e", "Session\u{a0}: {} · {} · {} CO₂e";
 }
 
 /// Replace the `{}` of `template`, in order, with `values`.
@@ -172,7 +176,7 @@ mod tests {
             .iter()
             .filter(|&&k| tr(Lang::En, k) == tr(Lang::Fr, k))
             .collect();
-        assert_eq!(same, [&Key::TooltipLive]);
+        assert_eq!(same, [&Key::TooltipLive, &Key::NotifyTitle]);
     }
 
     #[test]

@@ -11,12 +11,13 @@ use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use tauri::{async_runtime, AppHandle, Emitter, Manager};
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::agent::{AgentHandle, AgentSignal};
 use crate::error::AppError;
-use crate::i18n::Lang;
-use crate::protocol::{AgentCommand, AgentEvent, ApiKind};
+use crate::i18n::{tr, Key, Lang};
+use crate::protocol::{AgentCommand, AgentEvent, ApiKind, Summary};
 use crate::settings::{ApiSettings, Settings, DEFAULT_API_ENDPOINT};
 use crate::state::{create_command, AccountPhase, Effect, Phase, Selection, TrackerState};
 use crate::tray::Tray;
@@ -160,11 +161,17 @@ pub fn on_agent_signal(app: &AppHandle, signal: AgentSignal) {
     }
     run_effects(app, effects);
     publish(app);
-    if matches!(&signal, AgentSignal::Event(e) if matches!(**e, AgentEvent::Stopped { .. }))
-        && !core.exiting.load(Ordering::SeqCst)
-    {
-        if let Err(e) = app.emit(HISTORY_EVENT, ()) {
-            log::warn!("cannot emit {HISTORY_EVENT}: {e}");
+    if let AgentSignal::Event(event) = &signal {
+        if let AgentEvent::Stopped { summary } = &**event {
+            if !core.exiting.load(Ordering::SeqCst) {
+                if let Err(e) = app.emit(HISTORY_EVENT, ()) {
+                    log::warn!("cannot emit {HISTORY_EVENT}: {e}");
+                }
+            }
+            // Not when the stop is part of quitting (tray Quit, signal, logout).
+            if !core.is_quitting() && core.settings().notify_on_stop {
+                notify_stopped(app, summary);
+            }
         }
     }
     if auto_start && !core.is_quitting() {
@@ -172,6 +179,28 @@ pub fn on_agent_signal(app: &AppHandle, signal: AgentSignal) {
         if let Err(e) = start(app) {
             log::warn!("start on launch failed: {e}");
         }
+    }
+}
+
+/// "Session: 12 min · 0.04 Wh · 0.003 g CO₂e" as a native notification.
+/// A failure (no notification server, permission refused) is only logged.
+fn notify_stopped(app: &AppHandle, summary: &Summary) {
+    let lang = app.state::<AppCore>().settings().lang();
+    let body = crate::format::session_notification(
+        summary.duration_s,
+        summary.energy_kwh.total,
+        summary.emissions_kg,
+        lang,
+    );
+    let shown = app
+        .notification()
+        .builder()
+        .title(tr(lang, Key::NotifyTitle))
+        .body(&body)
+        .show();
+    match shown {
+        Ok(()) => log::info!("notification: {body}"),
+        Err(e) => log::warn!("cannot show the notification: {e}"),
     }
 }
 

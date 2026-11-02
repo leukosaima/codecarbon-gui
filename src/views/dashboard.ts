@@ -1,13 +1,16 @@
 /**
- * Dashboard: Start/Stop, live tiles, power sparkline, how-it-is-measured
- * notes and the last session summary. Pure rendering of `TrackerState`.
+ * Dashboard: first-run welcome card, Start/Stop, live tiles, power
+ * sparkline, how-it-is-measured notes and the last session summary.
+ * Pure rendering of `TrackerState`.
  */
 import {
   errorMessage,
   getEquivalents,
+  getFirstRunInfo,
   type Equivalent,
   openDataFolder,
   restartAgent,
+  saveSettings,
   startTracking,
   stopTracking,
   type Settings,
@@ -18,8 +21,9 @@ import { h, setText, show, spinner, svg } from "../dom";
 import * as fmt from "../format";
 import { cpuMethod, statusLine } from "../format";
 import { best, describe as describeEquivalent } from "../equivalents";
-import { live, liveAttr, n, t, tNodes, type MessageKey } from "../i18n/i18n";
+import { getLocale, live, liveAttr, n, t, tNodes, type Locale, type MessageKey } from "../i18n/i18n";
 import { sparkline, WINDOW_SECS } from "../sparkline";
+import { showWelcome } from "../welcome";
 
 const CHART_W = 300;
 const CHART_H = 64;
@@ -70,6 +74,18 @@ export class DashboardView {
   private equivalent: Equivalent | null = null;
   private readonly details = h("details", { class: "card details" });
   private readonly detailsBody = h("div", { class: "details-body" });
+  /** The power breakdown shown, to rebuild its parts only when it changes. */
+  private breakdownKey = "";
+
+  // First-run welcome card (see welcome.ts for when it shows).
+  private readonly welcome: HTMLElement;
+  /** "Press **Start measuring** to…", built again when the language changes. */
+  private readonly welcomeStart = h("p");
+  private welcomeStartLocale: Locale | null = null;
+  private readonly welcomeGnome = h("p", { class: "muted small" }, live("welcome.gnome"));
+  private settings: Settings | null = null;
+  /** From `get_first_run_info`; null until it answered. */
+  private hasSessions: boolean | null = null;
 
   constructor() {
     this.banner.append(this.bannerText, this.retry);
@@ -123,11 +139,32 @@ export class DashboardView {
 
     this.details.append(h("summary", {}, live("dashboard.how_measured")), this.detailsBody);
 
+    const dismiss = h(
+      "button",
+      { class: "btn btn-small", type: "button" },
+      live("welcome.dismiss"),
+    );
+    dismiss.addEventListener("click", () => void this.dismissWelcome());
+    this.welcome = h(
+      "section",
+      { class: "card welcome", "aria-labelledby": "welcome-title" },
+      h("h2", { class: "welcome-title", id: "welcome-title" }, live("welcome.title")),
+      h("p", {}, live("welcome.tray")),
+      this.welcomeStart,
+      h("p", {}, live("welcome.privacy")),
+      this.welcomeGnome,
+      h("div", { class: "welcome-actions" }, dismiss),
+    );
+    show(this.welcome, false);
+    show(this.welcomeGnome, false);
+    this.power.sub.classList.add("breakdown");
+
     this.root = h(
       "section",
       { class: "view dashboard" },
       this.banner,
       this.loading,
+      this.welcome,
       this.button,
       this.summary,
       h(
@@ -147,6 +184,45 @@ export class DashboardView {
     // Tick the duration tile between two measurements.
     window.setInterval(() => this.renderDuration(), 1000);
     show(this.uploadChip, false);
+
+    getFirstRunInfo()
+      .then((info) => {
+        this.hasSessions = info.has_sessions;
+        // Without the AppIndicator extension GNOME shows no tray icon at all.
+        show(this.welcomeGnome, info.platform === "linux");
+        this.renderWelcome();
+      })
+      .catch((e: unknown) => console.warn("get_first_run_info failed", e));
+  }
+
+  /** Show or hide the welcome card; its text follows the language. */
+  private renderWelcome(): void {
+    const visible = showWelcome({
+      dismissed: this.settings?.welcome_dismissed ?? null,
+      hasLastSummary: this.state?.last_summary != null,
+      hasSessions: this.hasSessions,
+    });
+    show(this.welcome, visible);
+    if (visible && this.welcomeStartLocale !== getLocale()) {
+      this.welcomeStartLocale = getLocale();
+      this.welcomeStart.replaceChildren(
+        ...tNodes("welcome.start", { start: h("b", {}, t("dashboard.start")) }),
+      );
+    }
+  }
+
+  /** "Got it": hidden at once, remembered in the settings. */
+  private async dismissWelcome(): Promise<void> {
+    const settings = this.settings;
+    if (!settings) return;
+    show(this.welcome, false);
+    try {
+      // `settings://changed` then calls setSettings with the saved copy.
+      this.setSettings(await saveSettings({ ...settings, welcome_dismissed: true }));
+    } catch (e) {
+      this.showError(errorMessage(e));
+      this.renderWelcome();
+    }
   }
 
   private async run(action: () => Promise<void>): Promise<void> {
@@ -168,8 +244,10 @@ export class DashboardView {
     void this.run(phase === "running" ? stopTracking : startTracking);
   }
 
-  /** Saved settings (at load and after every save): the upload chip. */
+  /** Saved settings (at load and after every save): upload chip, welcome card. */
   setSettings(settings: Settings): void {
+    this.settings = settings;
+    this.renderWelcome();
     const target = uploadChip(settings.api);
     this.uploadChip.replaceChildren();
     if (target) {
@@ -231,11 +309,10 @@ export class DashboardView {
       ];
       const breakdown = parts
         .filter(([name, w]) => w > 0 || name === "CPU")
-        .map(([name, w]) => `${name} ${fmt.power(w)}`)
-        .join(" · ");
-      setText(this.power.sub, summary ? t("dashboard.average", { breakdown }) : breakdown);
+        .map(([name, w]) => `${name} ${fmt.power(w)}`);
+      this.renderBreakdown(summary ? [t("dashboard.average"), ...breakdown] : breakdown);
     } else {
-      setText(this.power.sub, "");
+      this.renderBreakdown([]);
     }
     setText(this.co2.value, emissions !== undefined ? fmt.co2(emissions) : "–");
     setText(this.energy.value, energy !== undefined ? fmt.energy(energy) : "–");
@@ -292,6 +369,19 @@ export class DashboardView {
     }
 
     this.renderDetails(state);
+    this.renderWelcome();
+  }
+
+  /**
+   * "CPU 1.6 W · RAM 10.0 W", one element per part: on a narrow panel the
+   * parts wrap onto a second line instead of being cut off (styles.css
+   * draws the "·" between parts on the same line).
+   */
+  private renderBreakdown(parts: string[]): void {
+    const key = parts.join("\n");
+    if (key === this.breakdownKey) return;
+    this.breakdownKey = key;
+    this.power.sub.replaceChildren(...parts.map((part) => h("span", {}, part)));
   }
 
   /** One everyday equivalent of the session (factors from Rust). */

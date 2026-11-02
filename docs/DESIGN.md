@@ -148,6 +148,19 @@ Light and dark themes follow the OS. No framework: `src/main.ts` + small
 modules (`api.ts`, `format.ts`, `equivalents.ts`, `barchart.ts`, `i18n/`,
 `views/*.ts`).
 
+### 3.3b First run and notifications
+
+* **Welcome card** (Dashboard): shown until the user has stopped a first
+  session or pressed "Got it" (`welcome_dismissed` setting). The rule lives in
+  `src/welcome.ts`; `get_first_run_info` returns whether the history has
+  sessions and the platform (the GNOME tray hint is Linux-only).
+* **Session-end notification**: native notification "Session: 12 min ·
+  0.04 Wh · 0.003 g CO₂e" sent by Rust (tauri-plugin-notification) when a
+  session stops, unless disabled (`notify_on_stop`) or the app is quitting.
+  The panel has no notification permission; only Rust notifies.
+* Narrow windows (340 px): the power breakdown wraps instead of truncating;
+  History tile numbers shrink to fit.
+
 ### 3.4 Data & privacy
 
 * Settings: `<app config dir>/settings.json`.

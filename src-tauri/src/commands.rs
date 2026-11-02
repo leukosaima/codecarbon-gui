@@ -110,6 +110,26 @@ pub async fn get_history(app: AppHandle) -> CmdResult<HistoryPayload> {
     })
 }
 
+/// What the Dashboard's first-run welcome card needs.
+#[derive(Debug, serde::Serialize)]
+pub struct FirstRunInfo {
+    /// `emissions.csv` holds at least one session.
+    pub has_sessions: bool,
+    /// `"linux"`, `"macos"` or `"windows"` (the Linux card mentions the
+    /// GNOME AppIndicator extension).
+    pub platform: &'static str,
+}
+
+/// Cheap check for the first-run card: stops at the first session.
+#[tauri::command]
+pub async fn get_first_run_info(app: AppHandle) -> CmdResult<FirstRunInfo> {
+    let path = app.state::<AppCore>().data_dir.join(history::CSV_FILE);
+    Ok(FirstRunInfo {
+        has_sessions: history::has_sessions(&path),
+        platform: std::env::consts::OS,
+    })
+}
+
 /// Everyday equivalents of one session (dashboard summary line). The
 /// factors live in `history::FACTORS` only.
 #[tauri::command]

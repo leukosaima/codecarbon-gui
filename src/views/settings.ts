@@ -142,6 +142,7 @@ export class SettingsView {
       "settings.region_placeholder",
     ),
     save_csv: toggle("save_csv", "settings.save_csv", "settings.save_csv_help"),
+    notify_on_stop: toggle("notify_on_stop", "settings.notify_on_stop"),
     start_tracking_on_launch: toggle("start_tracking_on_launch", "settings.start_on_launch"),
     launch_at_login: toggle("launch_at_login", "settings.launch_at_login"),
     // The placeholder stays "1.0": number inputs do not take a decimal comma everywhere.
@@ -218,6 +219,7 @@ export class SettingsView {
         f.country_iso_code.row,
         f.region.row,
         f.save_csv.row,
+        f.notify_on_stop.row,
       ),
       h(
         "fieldset",
@@ -267,8 +269,16 @@ export class SettingsView {
    * other fields survive.
    */
   applySettings(s: Settings): void {
-    if (this.loaded) this.loaded = { ...this.loaded, api: s.api, language: s.language };
-    else this.loaded = s;
+    if (this.loaded) {
+      // `welcome_dismissed` is saved by the Dashboard's "Got it": kept so
+      // the Save button does not bring the welcome card back.
+      this.loaded = {
+        ...this.loaded,
+        api: s.api,
+        language: s.language,
+        welcome_dismissed: s.welcome_dismissed,
+      };
+    } else this.loaded = s;
     this.writeApi(s.api);
     this.language.value = s.language;
     this.account.setSettings(this.loaded);
@@ -330,6 +340,7 @@ export class SettingsView {
     f.country_iso_code.input.value = s.country_iso_code ?? "";
     f.region.input.value = s.region ?? "";
     f.save_csv.input.checked = s.save_csv;
+    f.notify_on_stop.input.checked = s.notify_on_stop;
     f.start_tracking_on_launch.input.checked = s.start_tracking_on_launch;
     f.launch_at_login.input.checked = s.launch_at_login;
     f.pue.input.value = s.pue == null ? "" : String(s.pue);
@@ -357,6 +368,7 @@ export class SettingsView {
       country_iso_code: optionalText(f.country_iso_code.input)?.toUpperCase() ?? null,
       region: optionalText(f.region.input),
       save_csv: f.save_csv.input.checked,
+      notify_on_stop: f.notify_on_stop.input.checked,
       start_tracking_on_launch: f.start_tracking_on_launch.input.checked,
       launch_at_login: f.launch_at_login.input.checked,
       api: {
@@ -373,6 +385,8 @@ export class SettingsView {
       language: isLanguage(this.language.value)
         ? this.language.value
         : (this.loaded?.language ?? "system"),
+      // Not in the form (the Dashboard's welcome card).
+      welcome_dismissed: this.loaded?.welcome_dismissed ?? false,
     };
   }
 
