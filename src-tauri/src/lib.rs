@@ -10,11 +10,13 @@
 //! * [`tray`]       – tray icon, menu, tooltip
 //! * [`commands`]   – `#[tauri::command]` API for the panel
 //! * [`format`]     – number formatting for the tray
+//! * [`history`]    – past sessions from `emissions.csv`, totals, equivalents
 
 pub mod agent;
 pub mod commands;
 pub mod controller;
 pub mod format;
+pub mod history;
 pub mod protocol;
 pub mod settings;
 pub mod state;
@@ -91,6 +93,8 @@ pub fn run() {
             commands::get_settings,
             commands::save_settings,
             commands::open_data_folder,
+            commands::get_history,
+            commands::get_equivalents,
             commands::open_url,
             commands::quit_app,
             commands::account_sign_in,

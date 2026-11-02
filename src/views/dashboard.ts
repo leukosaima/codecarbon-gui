@@ -4,6 +4,7 @@
  */
 import {
   errorMessage,
+  getEquivalents,
   openDataFolder,
   restartAgent,
   startTracking,
@@ -15,6 +16,7 @@ import { uploadChip } from "../account";
 import { h, setText, show, spinner, svg } from "../dom";
 import * as fmt from "../format";
 import { cpuMethod, statusLine } from "../format";
+import { best, describe as describeEquivalent } from "../equivalents";
 import { sparkline, WINDOW_SECS } from "../sparkline";
 
 const CHART_W = 300;
@@ -58,6 +60,10 @@ export class DashboardView {
   private readonly uploadChip = h("p", { class: "upload-chip" });
   private readonly summary: HTMLElement;
   private readonly summaryRows = h("dl", { class: "summary-grid" });
+  /** "≈ 0.4 km by car" for the last session. */
+  private readonly summaryEquivalent = h("p", { class: "summary-equivalent" });
+  /** Run id whose equivalent is shown (or being fetched). */
+  private equivalentFor: string | null = null;
   private readonly details = h("details", { class: "card details" });
   private readonly detailsBody = h("div", { class: "details-body" });
 
@@ -93,7 +99,9 @@ export class DashboardView {
       { class: "card summary" },
       h("div", { class: "card-head" }, h("span", {}, "Last session"), openFolder),
       this.summaryRows,
+      this.summaryEquivalent,
     );
+    show(this.summaryEquivalent, false);
 
     this.details.append(h("summary", {}, "How is this measured?"), this.detailsBody);
 
@@ -256,9 +264,26 @@ export class DashboardView {
       this.summaryRows.replaceChildren(
         ...rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]),
       );
+      this.renderEquivalent(summary.run_id, summary.emissions_kg, summary.energy_kwh.total);
     }
 
     this.renderDetails(state);
+  }
+
+  /** One everyday equivalent of the session (factors from Rust). */
+  private renderEquivalent(runId: string, emissionsKg: number, energyKwh: number): void {
+    if (this.equivalentFor === runId) return;
+    this.equivalentFor = runId;
+    show(this.summaryEquivalent, false);
+    getEquivalents(emissionsKg, energyKwh)
+      .then((list) => {
+        if (this.equivalentFor !== runId) return;
+        const eq = best(list);
+        const text = eq ? describeEquivalent(eq) : null;
+        setText(this.summaryEquivalent, text ?? "");
+        show(this.summaryEquivalent, text !== null);
+      })
+      .catch((e: unknown) => console.warn("get_equivalents failed", e));
   }
 
   private renderDuration(): void {

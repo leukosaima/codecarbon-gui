@@ -99,3 +99,72 @@ export function statusLine(
   if (ci != null) parts.push(intensity(ci));
   return parts.join(" · ");
 }
+
+/**
+ * Parse a local "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM:SS" (no offset, as in
+ * emissions.csv) as *local* time. (`new Date("YYYY-MM-DD")` would be UTC.)
+ */
+export function parseLocal(iso: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(iso.trim());
+  if (!m) return null;
+  const parts = m.slice(1).map((x) => Number(x ?? 0));
+  const [y = NaN, mo = NaN, d = NaN, hh = 0, mi = 0, ss = 0] = parts;
+  const date = new Date(y, mo - 1, d, hh, mi, ss);
+  // Reject roll-overs such as 2026-02-31.
+  return Number.isNaN(date.getTime()) || date.getMonth() !== mo - 1 ? null : date;
+}
+
+/** `locale` undefined = the system locale. */
+function dateFormat(
+  locale: string | undefined,
+  options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat(locale, options);
+}
+
+/**
+ * Date and time of a session: "Mon 2 Nov, 14:05" (en-GB). The year is
+ * added when it is not the current one.
+ */
+export function formatDate(iso: string, locale?: string, now: Date = new Date()): string {
+  const date = parseLocal(iso);
+  if (!date) return DASH;
+  return dateFormat(locale, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: date.getFullYear() === now.getFullYear() ? undefined : "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+/** A day: "Mon 2 Nov" (en-GB). */
+export function formatDay(date: string, locale?: string): string {
+  const d = parseLocal(date);
+  if (!d) return DASH;
+  return dateFormat(locale, { weekday: "short", day: "numeric", month: "short" }).format(d);
+}
+
+/**
+ * A chart tick: localised weekday, then the day of the month, in that
+ * order whatever the locale ("Mon 2", "lun. 2"; en-US alone would say "2 Mon").
+ */
+export function formatTick(date: string, locale?: string): string {
+  const d = parseLocal(date);
+  if (!d) return DASH;
+  const weekday = dateFormat(locale, { weekday: "short" }).format(d);
+  const day = dateFormat(locale, { day: "numeric" }).format(d);
+  return `${weekday} ${day}`;
+}
+
+/** A total duration in words: "45 s", "12 min", "3 h 5 min", "26 h". */
+export function durationShort(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return DASH;
+  if (seconds < 60) return `${Math.floor(seconds)} s`;
+  const minutes = Math.round(seconds / 60);
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m} min`;
+  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+}

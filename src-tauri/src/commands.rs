@@ -7,6 +7,7 @@
 use tauri::{AppHandle, Manager};
 
 use crate::controller::{self, AppCore};
+use crate::history::{self, Equivalent, Session};
 use crate::protocol::ApiKind;
 use crate::settings::Settings;
 use crate::state::TrackerState;
@@ -65,6 +66,47 @@ pub fn apply_launch_at_login(app: &AppHandle, enabled: bool) -> Result<(), Strin
         autolaunch.disable()
     };
     result.map_err(|e| e.to_string())
+}
+
+/// At most this many sessions are sent to the History view.
+const MAX_HISTORY_SESSIONS: usize = 500;
+
+/// What the History view shows.
+#[derive(Debug, serde::Serialize)]
+pub struct HistoryPayload {
+    pub summary: history::Summary,
+    /// Newest first, at most [`MAX_HISTORY_SESSIONS`].
+    pub sessions: Vec<Session>,
+    pub equivalents_all_time: Vec<Equivalent>,
+    pub equivalents_today: Vec<Equivalent>,
+    pub skipped_rows: usize,
+    /// Full path of `emissions.csv`.
+    pub path: String,
+}
+
+/// Read `emissions.csv` (on every call: it is small) and summarise it.
+#[tauri::command]
+pub async fn get_history(app: AppHandle) -> CmdResult<HistoryPayload> {
+    let path = app.state::<AppCore>().data_dir.join(history::CSV_FILE);
+    let mut h = history::load(&path).map_err(|e| format!("Cannot read {}: {e}", path.display()))?;
+    let summary = history::summarise(&h.sessions, chrono::Local::now().naive_local());
+    h.sessions.truncate(MAX_HISTORY_SESSIONS);
+    let equivalents = |t: &history::Totals| history::equivalents(t.emissions_kg, t.energy_kwh);
+    Ok(HistoryPayload {
+        equivalents_all_time: equivalents(&summary.all_time),
+        equivalents_today: equivalents(&summary.today),
+        summary,
+        sessions: h.sessions,
+        skipped_rows: h.skipped_rows,
+        path: h.path,
+    })
+}
+
+/// Everyday equivalents of one session (dashboard summary line). The
+/// factors live in `history::FACTORS` only.
+#[tauri::command]
+pub async fn get_equivalents(emissions_kg: f64, energy_kwh: f64) -> CmdResult<Vec<Equivalent>> {
+    Ok(history::equivalents(emissions_kg, energy_kwh))
 }
 
 #[tauri::command]

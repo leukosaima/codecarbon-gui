@@ -57,10 +57,11 @@ contributors can follow the Rust and TS parts.
 │   agent.rs ─── spawns + supervises the sidecar  ◄──┐     │
 │   settings.rs  JSON file in the app config dir     │     │
 │   commands.rs  #[tauri::command] API for the UI    │     │
-│        │ events "tracker://state"                  │     │
+│   history.rs   emissions.csv → totals, equivalents │     │
+│        │ events "tracker://state", "history://…"   │     │
 │        ▼                                           │     │
 │   WebView (TypeScript, Vite)                       │     │
-│     Dashboard · Settings · About                   │     │
+│     Dashboard · History · Settings · About         │     │
 └────────────────────────────────────────────────────┼─────┘
                                                      │ stdin  : {"cmd": ...}
                                                      │ stdout : {"event": ...}
@@ -108,13 +109,33 @@ contributors can follow the Rust and TS parts.
 ### 3.3 Panel (WebView)
 
 A single ~400 × 600 px window, hidden instead of closed, positioned next to the
-tray icon when opened from it. Three views, switched by a top tab bar:
+tray icon when opened from it. Four views, switched by a top tab bar
+(the tray's `app://navigate` event can also select one):
 
 * **Dashboard** — big Start/Stop button; live tiles for Power (with CPU/GPU/RAM
   breakdown), CO₂e, Energy, Duration; a sparkline of the last 5 minutes of
   power; a status line that says *how* the number was obtained
   ("CPU: estimated from load, TDP 45 W · GPU: NVML · France · 56 g/kWh").
-  After a stop, the last session summary stays visible.
+  After a stop, the last session summary stays visible, with one everyday
+  equivalent of that session ("≈ 0.4 km by car").
+* **History** — read from CodeCarbon's `emissions.csv` by `history.rs`
+  (`get_history`, re-read on every call: the file is small). Three tiles
+  (Today / This week / All time: CO₂e, energy, time), a 30-day bar chart of
+  daily CO₂e (inline SVG, Monday ticks, hover title per day), an "In
+  everyday terms" card for the all-time total (km by car, smartphone
+  charges, hours of LED TV, hours of video streaming) and the sessions list
+  (newest first, 20 at a time). Empty state until the first session stops;
+  the footer opens the data folder and says how many rows could not be
+  read. Refreshed when the tab opens and on `history://changed`, which the
+  controller emits when a session stops.
+  * The CSV is parsed **by header name** (CodeCarbon adds columns between
+    versions): unknown columns are ignored, missing optional ones are
+    empty, malformed rows are skipped and counted. `timestamp` is the local
+    stop time (no offset), so a session starts at `timestamp − duration`
+    and counts for that day; weeks are ISO weeks (Monday first).
+  * Equivalence factors live in one place, `history::FACTORS` (with their
+    sources); Rust returns raw numbers and `src/equivalents.ts` phrases
+    them with the app's number formatting. They are orders of magnitude.
 * **Settings** — measurement interval, country override (3-letter ISO) or
   "detect from IP", keep CSV history, start measuring on launch, launch at
   login, and an **API** section (endpoint, API key, experiment id, "upload to
@@ -123,13 +144,14 @@ tray icon when opened from it. Three views, switched by a top tab bar:
 * **About** — versions (app, agent, CodeCarbon), links, licence.
 
 Light and dark themes follow the OS. No framework: `src/main.ts` + small
-modules (`api.ts`, `format.ts`, `views/*.ts`).
+modules (`api.ts`, `format.ts`, `equivalents.ts`, `barchart.ts`, `views/*.ts`).
 
 ### 3.4 Data & privacy
 
 * Settings: `<app config dir>/settings.json`.
 * History: `<app data dir>/measurements/emissions.csv`, one row per session,
-  written with CodeCarbon's own CSV output.
+  written with CodeCarbon's own CSV output and only read by the app (History
+  view); it never leaves the computer.
 * Network: none unless the user leaves country on "detect from IP" (CodeCarbon
   calls its geolocation endpoint once per start) or enables API upload.
 

@@ -1,6 +1,6 @@
 [package]
 name = "codecarbon-desktop"
-version = "0.1.1"
+version = "0.1.2"
 description = "Tray / menu-bar app that measures your computer's power and CO2 emissions with CodeCarbon"
 authors = ["CodeCarbon contributors"]
 license = "MIT"
@@ -31,6 +31,10 @@ env_logger = "0.11"
 # Already used by Tauri (its async runtime); we need its timer (restart
 # back-off, quit time-outs) and Unix signal handling (graceful quit on SIGTERM).
 tokio = { version = "1", features = ["time", "signal", "macros"] }
+# History view: CodeCarbon's emissions.csv (parsed by header names) and
+# local-time aggregation per day / ISO week / month.
+csv = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"

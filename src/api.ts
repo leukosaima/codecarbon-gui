@@ -180,8 +180,71 @@ export interface Settings {
   force_carbon_intensity_g_per_kwh: number | null;
 }
 
+// --- History (emissions.csv, see history.rs) --------------------------------
+
+/** A past session, one row of `emissions.csv`. */
+export interface HistorySession {
+  /** Local time, "YYYY-MM-DDTHH:MM:SS" (no offset). */
+  started_at: string;
+  duration_s: number;
+  energy_kwh: number;
+  emissions_kg: number;
+  avg_power_w: number;
+  country_name: string | null;
+  project_name: string;
+  run_id: string;
+}
+
+export interface Totals {
+  sessions: number;
+  duration_s: number;
+  energy_kwh: number;
+  emissions_kg: number;
+}
+
+export interface DayTotal {
+  /** "YYYY-MM-DD", local. */
+  date: string;
+  energy_kwh: number;
+  emissions_kg: number;
+  duration_s: number;
+}
+
+export interface HistorySummary {
+  today: Totals;
+  this_week: Totals;
+  this_month: Totals;
+  all_time: Totals;
+  /** The last 30 days, oldest first, today last, zero-filled. */
+  daily: DayTotal[];
+}
+
+/** `value` `unit` of `key` (raw number, formatted by equivalents.ts). */
+export interface Equivalent {
+  key: string;
+  value: number;
+  unit: string;
+}
+
+export interface HistoryPayload {
+  summary: HistorySummary;
+  /** Newest first, at most 500. */
+  sessions: HistorySession[];
+  equivalents_all_time: Equivalent[];
+  equivalents_today: Equivalent[];
+  skipped_rows: number;
+  path: string;
+}
+
 /** Views of the panel; also the payload of the `app://navigate` event. */
-export type View = "dashboard" | "settings" | "about";
+export type View = "dashboard" | "history" | "settings" | "about";
+
+const VIEWS: readonly string[] = ["dashboard", "history", "settings", "about"];
+
+/** Narrow an `app://navigate` payload to a view name. */
+export function isView(name: unknown): name is View {
+  return typeof name === "string" && VIEWS.includes(name);
+}
 
 export const getState = (): Promise<TrackerState> => invoke<TrackerState>("get_state");
 export const startTracking = (): Promise<void> => invoke("start_tracking");
@@ -191,6 +254,11 @@ export const getSettings = (): Promise<Settings> => invoke<Settings>("get_settin
 export const saveSettings = (settings: Settings): Promise<Settings> =>
   invoke<Settings>("save_settings", { settings });
 export const openDataFolder = (): Promise<void> => invoke("open_data_folder");
+/** Reads `emissions.csv` on every call. */
+export const getHistory = (): Promise<HistoryPayload> => invoke<HistoryPayload>("get_history");
+/** Everyday equivalents of one session (the factors live in Rust). */
+export const getEquivalents = (emissionsKg: number, energyKwh: number): Promise<Equivalent[]> =>
+  invoke<Equivalent[]>("get_equivalents", { emissionsKg, energyKwh });
 export const openUrl = (url: string): Promise<void> => invoke("open_url", { url });
 export const quitApp = (): Promise<void> => invoke("quit_app");
 
@@ -227,9 +295,13 @@ export function onSettings(callback: (settings: Settings) => void): Promise<Unli
 /** The tray asks the panel to show a given view ("Settings…"). */
 export function onNavigate(callback: (view: View) => void): Promise<UnlistenFn> {
   return listen<string>("app://navigate", (event) => {
-    const view = event.payload;
-    if (view === "dashboard" || view === "settings" || view === "about") callback(view);
+    if (isView(event.payload)) callback(event.payload);
   });
+}
+
+/** A session stopped and was (probably) appended to `emissions.csv`. */
+export function onHistoryChanged(callback: () => void): Promise<UnlistenFn> {
+  return listen("history://changed", () => callback());
 }
 
 /** Commands reject with a plain string (see commands.rs); normalise anything else. */
