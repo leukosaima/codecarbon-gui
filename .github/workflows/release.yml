@@ -1,0 +1,102 @@
+name: Release
+
+# Builds the installers for every platform and attaches them to a GitHub
+# pre-release. Triggered by pushing a tag `vX.Y.Z` (or manually, which uses
+# the version in src-tauri/tauri.conf.json as the tag).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+
+jobs:
+  release:
+    name: Release (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            args: --bundles deb,rpm,appimage
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: --bundles nsis,msi
+          - name: macos-aarch64
+            os: macos-latest
+            target: aarch64-apple-darwin
+            args: --bundles dmg
+          - name: macos-x86_64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+            args: --bundles dmg
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Build codecarbon-agent (PyInstaller)
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "./agent" pyinstaller
+          python agent/build.py --target ${{ matrix.target }}
+      - name: Self-test the frozen agent
+        shell: bash
+        run: |
+          bin=src-tauri/binaries/codecarbon-agent-${{ matrix.target }}
+          if [ "$RUNNER_OS" = "Windows" ]; then bin="$bin.exe"; fi
+          "$bin" --selftest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v__VERSION__' }}
+          releaseName: "CodeCarbon Desktop ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v__VERSION__' }}"
+          releaseBody: |
+            Pre-release build of CodeCarbon Desktop.
+
+            **macOS Apple Silicon**: download `CodeCarbon_<version>_aarch64.dmg`, drag the app to Applications. The app is not signed yet: on first launch open *System Settings → Privacy & Security* and click **Open Anyway** (macOS 15+), or right-click the app → *Open* (macOS 14 and older).
+            **macOS Intel**: `CodeCarbon_<version>_x64.dmg`, same steps.
+            **Windows**: `CodeCarbon_<version>_x64-setup.exe` (SmartScreen: *More info → Run anyway*).
+            **Linux**: `.AppImage`, `.deb` or `.rpm`.
+
+            Full instructions: https://github.com/mlco2/codecarbon-gui/blob/main/docs/INSTALL.md
+          releaseDraft: false
+          prerelease: true
+          includeUpdaterJson: false
+          args: --target ${{ matrix.target }} ${{ matrix.args }}

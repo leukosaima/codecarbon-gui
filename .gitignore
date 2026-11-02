@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+agent/build/
+agent/dist/
+agent/*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Node / front-end
+node_modules/
+dist/
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/binaries/
+src-tauri/gen/schemas/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CodeCarbon",
+  "version": "0.1.0",
+  "identifier": "io.codecarbon.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "CodeCarbon",
+        "width": 400,
+        "height": 600,
+        "minWidth": 340,
+        "minHeight": 460,
+        "resizable": true,
+        "visible": false,
+        "skipTaskbar": true,
+        "decorations": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' ipc: http://ipc.localhost; img-src 'self' data:; style-src 'self' 'unsafe-inline'",
+      "devCsp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Utility",
+    "shortDescription": "Measure your computer's power and CO2 emissions",
+    "longDescription": "A tray / menu-bar application that measures the power draw and CO2 emissions of your computer with CodeCarbon.",
+    "copyright": "MIT licence, CodeCarbon contributors",
+    "externalBin": [
+      "binaries/codecarbon-agent"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
