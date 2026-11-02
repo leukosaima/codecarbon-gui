@@ -1,0 +1,165 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+
+jobs:
+  agent-tests:
+    name: Agent tests (Python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: agent/pyproject.toml
+      - name: Install
+        run: python -m pip install -e "agent[dev]"
+      - name: Lint
+        run: ruff check agent && ruff format --check agent
+      - name: Unit tests
+        run: pytest agent -q
+      - name: Integration test (real CodeCarbon tracker)
+        env:
+          CODECARBON_AGENT_INTEGRATION: "1"
+        run: pytest agent -q -m integration
+
+  app-checks:
+    name: App checks (Rust + TypeScript)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf xvfb
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Stand-in sidecar (fake agent, compile only)
+        run: scripts/use-fake-agent.sh
+      - name: Front-end
+        run: |
+          npm ci
+          npm run lint --if-present
+          npm test
+          npm run build
+      - name: Rust
+        working-directory: src-tauri
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+      - name: Headless smoke test (fake agent)
+        run: scripts/smoke-test.sh
+
+  build:
+    name: Build installers (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,rpm,appimage
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis,msi
+          - name: macos-aarch64
+            os: macos-latest
+            target: aarch64-apple-darwin
+            bundles: dmg
+          - name: macos-x86_64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: dmg
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf
+
+      # ---- Python sidecar -------------------------------------------------
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: agent/pyproject.toml
+      - name: Build codecarbon-agent (PyInstaller)
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "./agent" pyinstaller
+          python agent/build.py --target ${{ matrix.target }}
+      - name: Self-test the frozen agent
+        shell: bash
+        run: |
+          bin=src-tauri/binaries/codecarbon-agent-${{ matrix.target }}
+          if [ "$RUNNER_OS" = "Windows" ]; then bin="$bin.exe"; fi
+          ls -la "$bin"
+          "$bin" --version
+          "$bin" --selftest
+
+      # ---- Tauri app ------------------------------------------------------
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+      - name: npm ci
+        run: npm ci
+      - name: tauri build
+        run: npm run tauri -- build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+      - name: Collect bundles
+        shell: bash
+        run: |
+          mkdir -p out
+          find src-tauri/target -path '*/release/bundle/*' -type f \
+            \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.dmg' \
+               -o -name '*.exe' -o -name '*.msi' \) -exec cp {} out/ \;
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codecarbon-desktop-${{ matrix.name }}
+          path: out/*
+          if-no-files-found: error
