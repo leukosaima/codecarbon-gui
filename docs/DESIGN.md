@@ -89,8 +89,9 @@ contributors can follow the Rust and TS parts.
 
 ### 3.2 Tray
 
-* Icon: monochrome leaf (template icon on macOS). Grey/outlined when idle,
-  filled green when measuring.
+* Icon: the CodeCarbon molecule mark (from the official logo). Dimmed grey
+  when idle, brand lime when measuring; a template icon on macOS (alpha
+  only, so idle is 45 % opacity). The app icon is the project's favicon.
 * Tooltip: `CodeCarbon — not measuring` / `CodeCarbon — 23.4 W · 0.84 g CO₂e`.
 * macOS only: the menu-bar title shows the live power, e.g. `23 W`.
 * Menu:
