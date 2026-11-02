@@ -22,13 +22,13 @@ currently `1`).
 
 | key | type | default | notes |
 | --- | --- | --- | --- |
-| `interval_secs` | number | `3` | `measure_power_secs` of the tracker **and** the cadence of `measurement` events |
+| `interval_secs` | number | `3` | `measure_power_secs` of the tracker **and** the cadence of `measurement` events (clamped to ≥ 0.5) |
 | `country_iso_code` | string | – | 3-letter ISO code. If present → `OfflineEmissionsTracker` (no network). If absent → `EmissionsTracker` (geolocation by IP). |
-| `region` | string | – | state / province (US, CA) |
+| `region` | string | – | state / province (US, CA); only used together with `country_iso_code` |
 | `tracking_mode` | `"machine"` \| `"process"` | `"machine"` | |
 | `project_name` | string | `"codecarbon-gui"` | |
-| `save_to_file` | bool | `true` | append runs to `output_dir/emissions.csv` |
-| `output_dir` | string | cwd | must exist or be creatable |
+| `save_to_file` | bool | `true` | append **one row per run** (at `stop`) to `output_dir/emissions.csv`, in CodeCarbon's CSV format |
+| `output_dir` | string | cwd | created if missing. The app must always pass it (Finder-launched apps have an unwritable cwd; Apple Silicon measurement also writes a temp log there). |
 | `save_to_api` | bool | `false` | upload to the CodeCarbon API |
 | `api_endpoint` | string | `"https://api.codecarbon.io"` | |
 | `api_key` | string | – | required when `save_to_api` |
@@ -60,12 +60,12 @@ offset, e.g. `2026-11-02T20:50:26+01:00`).
    "descriptions":["RAM()","CPU(Cpu Load)"]},
  "location":{"country_name":"France","country_iso_code":"FRA","region":null,
              "carbon_intensity_g_per_kwh":56.0},
- "config":{…effective config…}}
+ "config":{…effective config, with "api_key" replaced by "***"…}}
 ```
 `cpu_method` is one of `intel_rapl`, `windows_emi`, `intel_power_gadget`,
-`apple_powermetrics`, `cpu_load`, `constant`, or whatever CodeCarbon reports
-(pass the string through; the UI only needs it for display). `gpu_method` is
-`nvml` or `null`. `carbon_intensity_g_per_kwh` may be `null` if it cannot be
+`apple_powermetrics`, `cpu_load`, `constant`, `raspberry_pmic`, or whatever
+CodeCarbon reports (pass the string through; the UI only needs it for
+display). `gpu_method` is `nvml`, `amdsmi`, `apple_powermetrics` or `null`. `carbon_intensity_g_per_kwh` may be `null` if it cannot be
 derived.
 
 ### `measurement` — every `interval_secs` while running
@@ -87,31 +87,54 @@ average that CodeCarbon writes in its CSV), because the UI is a live meter.
   "run_id":"uuid","started_at":"…","stopped_at":"…","duration_s":600.4,
   "energy_kwh":{…},"emissions_kg":…, "emissions_rate_kg_s":…,
   "avg_power_w":{"cpu":…,"gpu":…,"ram":…,"total":…},
-  "carbon_intensity_g_per_kwh":56.0}}
+  "carbon_intensity_g_per_kwh":56.0,
+  "output_file":"/path/to/emissions.csv"}}
 ```
+`output_file` is `null` when `save_to_file` is false.
 
 ### `status` — reply to `status`
 ```json
 {"event":"status","ts":"…","state":"idle"|"running","last_measurement":{…}|null}
 ```
+`last_measurement` is the whole last `measurement` event; it is reset at
+`start` and kept after `stop`.
 
 ### `log` — notable CodeCarbon warnings forwarded for display
 ```json
 {"event":"log","ts":"…","level":"warning","message":"No CPU tracking mode found. Falling back on CPU load mode."}
 ```
+Levels follow Python logging (`warning`, `error`, `critical`). CodeCarbon's
+own noise ("Multiple instances … allowed", "graceful shutdown…") is dropped.
+Nothing is forwarded when the configured `log_level` is above `warning`.
 
 ### `error`
 ```json
 {"event":"error","ts":"…","code":"already_running","message":"…"}
 ```
-Codes: `already_running`, `not_running`, `bad_command`, `tracker_init_failed`,
-`internal`. After `tracker_init_failed` the agent is back in `idle` and can
-accept a new `start`.
+Codes and when they are used:
 
-## Exit codes
+* `bad_command` — unknown command, invalid JSON line, or a malformed
+  `config` (wrong types, country code not 3 letters, invalid `tracking_mode`
+  / `log_level`, `interval_secs` ≤ 0).
+* `already_running` / `not_running` — `start` while running, `stop` while idle.
+* `tracker_init_failed` — unknown country, `output_dir` not creatable,
+  `save_to_api` without `api_key` or `experiment_id`, or CodeCarbon itself
+  failed to start (its `start()` swallows exceptions; the agent detects the
+  failure because the tracker never gets a start time).
+* `internal` — unexpected exception. One `internal` error
+  (`"measurement failed: …"`) is emitted per run of consecutive failed samples;
+  sampling continues and the run stays `running`.
 
-`0` normal (`quit` or EOF), `1` unexpected crash (traceback on stderr),
-`2` bad CLI usage.
+After `bad_command` and `tracker_init_failed` the agent is back in `idle` and
+accepts a new `start`.
+
+## Exit codes and signals
+
+`0` normal (`quit`, EOF, SIGTERM/SIGINT/SIGHUP — SIGBREAK on Windows — all
+stop a running tracker first), `1` unexpected crash (traceback on stderr) or
+watchdog kill (the agent stuck for > 10 s while exiting), `2` bad CLI usage.
+`quit`/EOF received while a `start` is in progress is handled once that start
+has finished.
 
 ## CLI
 
