@@ -24,8 +24,12 @@ pub const STATE_EVENT: &str = "tracker://state";
 /// Event carrying the new [`Settings`] after every save (by the Settings
 /// view, or by the dashboard sign-in flow).
 pub const SETTINGS_EVENT: &str = "settings://changed";
-/// Event asking the panel to switch view (`"dashboard"`, `"settings"`, `"about"`).
+/// Event asking the panel to switch view (`"dashboard"`, `"history"`,
+/// `"settings"`, `"about"`).
 pub const NAVIGATE_EVENT: &str = "app://navigate";
+/// Event (no payload) telling the History view to reload `emissions.csv`:
+/// sent when a session stops, after CodeCarbon has appended its row.
+pub const HISTORY_EVENT: &str = "history://changed";
 /// Label of the panel window (see tauri.conf.json).
 pub const MAIN_WINDOW: &str = "main";
 
@@ -153,6 +157,13 @@ pub fn on_agent_signal(app: &AppHandle, signal: AgentSignal) {
     }
     run_effects(app, effects);
     publish(app);
+    if matches!(&signal, AgentSignal::Event(e) if matches!(**e, AgentEvent::Stopped { .. }))
+        && !core.exiting.load(Ordering::SeqCst)
+    {
+        if let Err(e) = app.emit(HISTORY_EVENT, ()) {
+            log::warn!("cannot emit {HISTORY_EVENT}: {e}");
+        }
+    }
     if auto_start && !core.is_quitting() {
         log::info!("starting measurement on launch (setting)");
         if let Err(e) = start(app) {

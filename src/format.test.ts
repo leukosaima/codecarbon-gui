@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { Hardware, Location } from "./api";
-import { co2, cpuMethod, duration, energy, intensity, power, sig3, statusLine } from "./format";
+import {
+  co2,
+  cpuMethod,
+  duration,
+  durationShort,
+  energy,
+  formatDate,
+  formatDay,
+  formatTick,
+  intensity,
+  parseLocal,
+  power,
+  sig3,
+  statusLine,
+} from "./format";
 
 // Same cases as src-tauri/src/format.rs.
 describe("sig3", () => {
@@ -99,5 +113,60 @@ describe("statusLine", () => {
   });
   it("passes unknown methods through", () => {
     expect(cpuMethod(hw({ cpu_method: "something_new" }))).toBe("something_new");
+  });
+});
+
+describe("dates (local time, no offset)", () => {
+  const now = new Date(2026, 10, 2, 12, 0, 0);
+
+  it("parses CodeCarbon timestamps as local time", () => {
+    const d = parseLocal("2026-11-02T14:05:09");
+    expect(d?.getFullYear()).toBe(2026);
+    expect(d?.getMonth()).toBe(10);
+    expect(d?.getDate()).toBe(2);
+    expect(d?.getHours()).toBe(14);
+    expect(d?.getSeconds()).toBe(9);
+    // Date-only strings are local midnight, not UTC.
+    expect(parseLocal("2026-03-01")?.getDate()).toBe(1);
+    expect(parseLocal("2026-03-01")?.getHours()).toBe(0);
+    expect(parseLocal("2026-02-31")).toBeNull();
+    expect(parseLocal("yesterday")).toBeNull();
+  });
+
+  it("formats a session date with the given locale", () => {
+    expect(formatDate("2026-11-02T14:05:09", "en-GB", now)).toBe("Mon 2 Nov, 14:05");
+    expect(formatDate("2026-11-02T14:05:09", "en-US", now)).toBe("Mon, Nov 2, 2:05 PM");
+    expect(formatDate("2025-11-02T14:05:09", "en-GB", now)).toBe("Sun, 2 Nov 2025, 14:05");
+    expect(formatDate("garbage", "en-GB", now)).toBe("–");
+  });
+
+  it("formats days and chart ticks", () => {
+    expect(formatDay("2026-11-02", "en-GB")).toBe("Mon 2 Nov");
+    expect(formatDay("2026-11-02", "fr-FR")).toBe("lun. 2 nov.");
+    expect(formatTick("2026-10-26", "en-GB")).toBe("Mon 26");
+    expect(formatTick("2026-10-26", "en-US")).toBe("Mon 26");
+    expect(formatTick("2026-10-26", "fr-FR")).toBe("lun. 26");
+    expect(formatDay("", "en-GB")).toBe("–");
+  });
+
+  it("uses the system locale by default", () => {
+    const expected = new Intl.DateTimeFormat(undefined, {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+    }).format(new Date(2026, 10, 2));
+    expect(formatDay("2026-11-02")).toBe(expected);
+  });
+});
+
+describe("durationShort", () => {
+  it("uses words", () => {
+    expect(durationShort(0)).toBe("0 s");
+    expect(durationShort(45.9)).toBe("45 s");
+    expect(durationShort(60)).toBe("1 min");
+    expect(durationShort(12 * 60 + 20)).toBe("12 min");
+    expect(durationShort(3 * 3600 + 5 * 60)).toBe("3 h 5 min");
+    expect(durationShort(26 * 3600)).toBe("26 h");
+    expect(durationShort(-1)).toBe("–");
   });
 });

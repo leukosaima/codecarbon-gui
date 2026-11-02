@@ -1,11 +1,12 @@
 /**
- * Panel entry point: a tab bar and three views. Every render comes from the
+ * Panel entry point: a tab bar and four views. Every render comes from the
  * `TrackerState` pushed by Rust on `tracker://state`.
  */
 import "./styles.css";
 import {
   getSettings,
   getState,
+  onHistoryChanged,
   onNavigate,
   onSettings,
   onState,
@@ -16,14 +17,17 @@ import {
 import { h } from "./dom";
 import { AboutView } from "./views/about";
 import { DashboardView } from "./views/dashboard";
+import { HistoryView } from "./views/history";
 import { SettingsView } from "./views/settings";
 
 const dashboard = new DashboardView();
+const history = new HistoryView();
 const settings = new SettingsView();
 const about = new AboutView();
 
 const views: Record<View, { label: string; root: HTMLElement }> = {
   dashboard: { label: "Dashboard", root: dashboard.root },
+  history: { label: "History", root: history.root },
   settings: { label: "Settings", root: settings.root },
   about: { label: "About", root: about.root },
 };
@@ -37,7 +41,14 @@ for (const [view, { label }] of Object.entries(views) as [View, { label: string 
   nav.append(tab);
 }
 
-const main = h("main", { class: "content" }, dashboard.root, settings.root, about.root);
+const main = h(
+  "main",
+  { class: "content" },
+  dashboard.root,
+  history.root,
+  settings.root,
+  about.root,
+);
 document.querySelector("#app")?.append(nav, main);
 
 function select(view: View): void {
@@ -48,6 +59,7 @@ function select(view: View): void {
     tab?.setAttribute("aria-selected", String(name === view));
   }
   if (view === "settings") void settings.load();
+  if (view === "history") void history.load();
   main.scrollTop = 0;
 }
 
@@ -59,6 +71,7 @@ function render(state: TrackerState): void {
 
 function applySettings(s: Settings): void {
   dashboard.setSettings(s);
+  history.setSettings(s);
   settings.applySettings(s);
 }
 
@@ -67,6 +80,8 @@ select("dashboard");
 // Subscribe first, then fetch the current state, so no update is missed.
 void onState(render);
 void onNavigate(select);
+// A session stopped: CodeCarbon has appended its row to emissions.csv.
+void onHistoryChanged(() => void history.load());
 void onSettings(applySettings);
 getState()
   .then(render)

@@ -14,7 +14,7 @@
   organisation → project → experiment from drop-downs, project API key
   fetched automatically, sessions uploaded through `save_to_api`.
   Later: keep the tokens in the OS keychain instead of a 0600 file.
-- **History view**: read `emissions.csv`, show past sessions, totals per
+- [x] **History view**: read `emissions.csv`, show past sessions, totals per
   day/week, and "equivalents" (km by car, smartphone charges…).
 - Notifications: "You emitted X g today".
 

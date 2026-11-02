@@ -679,6 +679,172 @@ input[type="checkbox"][role="switch"]:checked::after {
   text-overflow: ellipsis;
 }
 
+/* ---- History ------------------------------------------------------------ */
+
+.tiles-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tiles-3 .tile {
+  padding: 10px 10px 8px;
+}
+
+.tiles-3 .tile-value {
+  font-size: 20px;
+}
+
+.bars {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.bar-hit {
+  fill: transparent;
+}
+
+.bar-fill {
+  fill: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.bar.today .bar-fill,
+.bar:hover .bar-fill {
+  fill: var(--accent);
+}
+
+.bar:hover .bar-hit {
+  fill: var(--accent-soft);
+}
+
+.bars-axis,
+.bars-tick {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.bars-tick {
+  stroke: var(--muted);
+}
+
+.bars-label {
+  fill: var(--muted);
+  font-size: 9px;
+}
+
+.chart-empty {
+  margin: 4px 0 0;
+  text-align: center;
+}
+
+.equivalents {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.equivalents li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.eq-icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 3px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.eq-note {
+  margin: 10px 0 0;
+}
+
+.sessions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sessions li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+}
+
+.sessions li:first-child {
+  border-top: 0;
+  padding-top: 2px;
+}
+
+.session-main {
+  min-width: 0;
+}
+
+.session-main > div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-date {
+  font-weight: 500;
+}
+
+.session-co2 {
+  flex: none;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.sessions + .more {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--muted);
+  padding: 28px 18px;
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+.history-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 12px;
+  font-size: 12px;
+}
+
+.summary-equivalent {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  color: var(--accent);
+  font-weight: 500;
+  text-align: center;
+}
+
 /* ---- About -------------------------------------------------------------- */
 
 .about-head {
