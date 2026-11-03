@@ -176,6 +176,8 @@ jobs:
           echo "--- sidecar from the signed bundle"
           "$app/Contents/MacOS/codecarbon-agent" --version
           "$app/Contents/MacOS/codecarbon-agent" --selftest
+          # The whole app, started like Finder starts it, spawning the sidecar.
+          scripts/macos-app-smoke.sh "$app"
           hdiutil detach "$mount"
       - name: Collect bundles
         shell: bash

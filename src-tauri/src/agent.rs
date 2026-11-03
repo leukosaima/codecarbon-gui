@@ -14,6 +14,7 @@
 //!   (protocol v2, dashboard login). An older agent that rejects the flag
 //!   (exit code 2 before `ready`) is restarted at once without it.
 
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -82,6 +83,9 @@ struct Inner {
     no_credentials_flag: bool,
     /// The live process sent `ready` (tells a CLI usage error from a crash).
     got_ready: bool,
+    /// Last lines the live process wrote to stderr, kept to explain a crash
+    /// (e.g. the PyInstaller bootloader failing before Python starts).
+    stderr_tail: VecDeque<String>,
 }
 
 /// Cheap-to-clone handle on the supervised agent.
@@ -246,6 +250,7 @@ impl AgentHandle {
                 failures = 0;
             }
             let restarting = failures < BACKOFF.len();
+            let tail: Vec<String> = self.lock().stderr_tail.iter().cloned().collect();
             log::warn!(
                 "agent exited unexpectedly ({detail}); {}",
                 if restarting {
@@ -254,11 +259,14 @@ impl AgentHandle {
                     "giving up"
                 }
             );
+            for line in &tail {
+                log::warn!("agent stderr: {line}");
+            }
             (self.handler)(
                 &self.app,
                 AgentSignal::Exited {
                     restarting,
-                    detail: detail.clone(),
+                    detail: exit_detail(&detail, &tail),
                 },
             );
             if !restarting {
@@ -299,6 +307,7 @@ impl AgentHandle {
             inner.child = Some(child);
             inner.ready = None;
             inner.got_ready = false;
+            inner.stderr_tail.clear();
         }
 
         let mut detail = "the process exited".to_string();
@@ -314,6 +323,10 @@ impl AgentHandle {
                     let text = text.trim_end();
                     if !text.is_empty() {
                         log::debug!("agent stderr: {text}");
+                        let mut inner = self.lock();
+                        if inner.generation == generation {
+                            remember_stderr(&mut inner.stderr_tail, text);
+                        }
                     }
                 }
                 CommandEvent::Error(e) => {
@@ -388,6 +401,36 @@ impl AgentHandle {
     }
 }
 
+/// How many stderr lines are kept to explain a crash.
+const STDERR_TAIL: usize = 8;
+/// Longest stderr excerpt appended to the error shown in the panel.
+const DETAIL_MAX_CHARS: usize = 200;
+
+/// Keep the last [`STDERR_TAIL`] non-empty stderr lines.
+fn remember_stderr(tail: &mut VecDeque<String>, text: &str) {
+    for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        if tail.len() == STDERR_TAIL {
+            tail.pop_front();
+        }
+        tail.push_back(line.to_string());
+    }
+}
+
+/// "exit code 255" plus the agent's last stderr line, when there is one,
+/// so the panel says *why* the engine stopped (shortened to fit).
+fn exit_detail(detail: &str, tail: &[String]) -> String {
+    match tail.last() {
+        None => detail.to_string(),
+        Some(last) => {
+            let mut excerpt: String = last.chars().take(DETAIL_MAX_CHARS).collect();
+            if last.chars().count() > DETAIL_MAX_CHARS {
+                excerpt.push('…');
+            }
+            format!("{detail}: {excerpt}")
+        }
+    }
+}
+
 /// Kill a child without blocking the caller (`CommandChild::kill` waits).
 fn kill_child(child: CommandChild) {
     std::thread::spawn(move || {
@@ -396,4 +439,41 @@ fn kill_child(child: CommandChild) {
             log::debug!("killing agent pid {pid}: {e}");
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stderr_tail_keeps_the_last_non_empty_lines() {
+        let mut tail = VecDeque::new();
+        remember_stderr(&mut tail, "first\n\n  second  \n");
+        assert_eq!(tail, ["first", "second"]);
+        for i in 0..20 {
+            remember_stderr(&mut tail, &format!("line {i}"));
+        }
+        assert_eq!(tail.len(), STDERR_TAIL);
+        assert_eq!(tail.back().map(String::as_str), Some("line 19"));
+    }
+
+    #[test]
+    fn exit_detail_appends_the_last_stderr_line() {
+        assert_eq!(exit_detail("exit code 255", &[]), "exit code 255");
+        let tail = vec![
+            "noise".to_string(),
+            "[PYI-123:ERROR] Failed to load Python shared library".to_string(),
+        ];
+        assert_eq!(
+            exit_detail("exit code 255", &tail),
+            "exit code 255: [PYI-123:ERROR] Failed to load Python shared library"
+        );
+        let long = vec!["x".repeat(500)];
+        let shown = exit_detail("exit code 1", &long);
+        assert!(shown.ends_with('…'));
+        assert_eq!(
+            shown.chars().count(),
+            "exit code 1: ".len() + DETAIL_MAX_CHARS + 1
+        );
+    }
 }
