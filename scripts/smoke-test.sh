@@ -18,7 +18,7 @@
 #   scripts/smoke-test.sh --build    # rebuilds it first (tauri build --debug --no-bundle)
 #
 # Environment:
-#   SMOKE_SECONDS=15        how long the app runs before SIGTERM
+#   SMOKE_SECONDS=20        how long the app runs before SIGTERM
 #   SMOKE_SCREENSHOT=path   also save a PNG of the panel (needs ImageMagick `import`)
 #   APP_BIN=path            app binary (default: src-tauri/target/debug/codecarbon-desktop)
 #
@@ -28,7 +28,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(dirname "$here")"
-seconds="${SMOKE_SECONDS:-15}"
+seconds="${SMOKE_SECONDS:-20}"
 bin="${APP_BIN:-$root/src-tauri/target/debug/codecarbon-desktop}"
 triple="$("$here/host-triple.sh")"
 sidecar="$root/src-tauri/binaries/codecarbon-agent-$triple"
