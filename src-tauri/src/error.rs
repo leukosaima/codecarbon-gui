@@ -90,6 +90,18 @@ pub enum AppError {
     InsecureLoginUrl,
     #[error("The dashboard returned an empty API key.")]
     EmptyApiKey,
+
+    // --- Updates --------------------------------------------------------------
+    #[error("Automatic updates are not configured for this build.")]
+    UpdatesNotConfigured,
+    #[error("There is no update to install.")]
+    NoUpdateAvailable,
+    /// Fetching or reading `latest.json` failed.
+    #[error("Update check failed: {0}")]
+    UpdateCheckFailed(String),
+    /// Downloading, verifying or installing the update failed.
+    #[error("The update could not be installed ({0}).")]
+    UpdateInstallFailed(String),
 }
 
 impl AppError {
@@ -129,6 +141,10 @@ impl AppError {
             DashboardError(_) => "dashboard_error",
             InsecureLoginUrl => "insecure_login_url",
             EmptyApiKey => "empty_api_key",
+            UpdatesNotConfigured => "updates_not_configured",
+            NoUpdateAvailable => "no_update_available",
+            UpdateCheckFailed(_) => "update_check_failed",
+            UpdateInstallFailed(_) => "update_install_failed",
         }
     }
 
@@ -146,7 +162,9 @@ impl AppError {
             | SettingsSaveFailed(d)
             | LaunchAtLoginFailed(d)
             | SignInRejected(d)
-            | DashboardError(d) => Some(d),
+            | DashboardError(d)
+            | UpdateCheckFailed(d)
+            | UpdateInstallFailed(d) => Some(d),
             _ => None,
         }
     }
@@ -189,6 +207,10 @@ impl AppError {
             DashboardError(d()),
             InsecureLoginUrl,
             EmptyApiKey,
+            UpdatesNotConfigured,
+            NoUpdateAvailable,
+            UpdateCheckFailed(d()),
+            UpdateInstallFailed(d()),
         ]
     }
 }

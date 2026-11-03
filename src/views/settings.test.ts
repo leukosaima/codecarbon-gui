@@ -23,6 +23,7 @@ const defaults = (): Settings => ({
   language: "system",
   notify_on_stop: true,
   welcome_dismissed: false,
+  check_updates: true,
 });
 
 describe("settings validation", () => {

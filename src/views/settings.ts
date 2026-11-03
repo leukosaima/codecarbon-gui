@@ -145,6 +145,11 @@ export class SettingsView {
     notify_on_stop: toggle("notify_on_stop", "settings.notify_on_stop"),
     start_tracking_on_launch: toggle("start_tracking_on_launch", "settings.start_on_launch"),
     launch_at_login: toggle("launch_at_login", "settings.launch_at_login"),
+    check_updates: toggle(
+      "check_updates",
+      "settings.check_updates",
+      "settings.check_updates_help",
+    ),
     // The placeholder stays "1.0": number inputs do not take a decimal comma everywhere.
     pue: field(
       "pue",
@@ -188,6 +193,12 @@ export class SettingsView {
   /** What `message` shows, so it can be rendered again in another language. */
   private messageText: (() => string) | null = null;
   private readonly account = new AccountCard((enabled) => this.saveUploadEnabled(enabled));
+  /** Shown (and the switch disabled) in a build without an updater key. */
+  private readonly updatesUnavailable = h(
+    "p",
+    { class: "muted small", hidden: true },
+    live("settings.updates_not_configured"),
+  );
 
   constructor() {
     const f = this.fields;
@@ -231,6 +242,13 @@ export class SettingsView {
       h(
         "fieldset",
         { class: "card" },
+        h("legend", { class: "card-title" }, live("settings.updates")),
+        f.check_updates.row,
+        this.updatesUnavailable,
+      ),
+      h(
+        "fieldset",
+        { class: "card" },
         h(
           "legend",
           { class: "card-title", id: "language-title" },
@@ -261,6 +279,9 @@ export class SettingsView {
   /** Every `TrackerState` push (the account card renders from it). */
   update(state: TrackerState): void {
     this.account.update(state);
+    const configured = state.updater.configured;
+    this.fields.check_updates.input.disabled = !configured;
+    show(this.updatesUnavailable, !configured);
   }
 
   /**
@@ -343,6 +364,7 @@ export class SettingsView {
     f.notify_on_stop.input.checked = s.notify_on_stop;
     f.start_tracking_on_launch.input.checked = s.start_tracking_on_launch;
     f.launch_at_login.input.checked = s.launch_at_login;
+    f.check_updates.input.checked = s.check_updates;
     f.pue.input.value = s.pue == null ? "" : String(s.pue);
     f.force_carbon_intensity_g_per_kwh.input.value =
       s.force_carbon_intensity_g_per_kwh == null ? "" : String(s.force_carbon_intensity_g_per_kwh);
@@ -371,6 +393,7 @@ export class SettingsView {
       notify_on_stop: f.notify_on_stop.input.checked,
       start_tracking_on_launch: f.start_tracking_on_launch.input.checked,
       launch_at_login: f.launch_at_login.input.checked,
+      check_updates: f.check_updates.input.checked,
       api: {
         enabled: saved?.enabled ?? false,
         endpoint: f["api.endpoint"].input.value.trim(),

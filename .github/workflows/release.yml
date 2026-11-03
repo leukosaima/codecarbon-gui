@@ -3,6 +3,12 @@ name: Release
 # Builds the installers for every platform and attaches them to a GitHub
 # pre-release. Triggered by pushing a tag `vX.Y.Z` (or manually, which uses
 # the version in src-tauri/tauri.conf.json as the tag).
+#
+# Automatic updates: once the repository has the TAURI_SIGNING_PRIVATE_KEY
+# (+ _PASSWORD) secrets, the build also signs the updater files (`.sig`,
+# macOS `.app.tar.gz`) and the release gets a `latest.json`. Without them
+# it builds exactly the same installers as before. See docs/DEVELOPMENT.md,
+# "Enabling automatic updates".
 
 on:
   push:
@@ -27,22 +33,28 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # `updater_bundles`: with the signing key. The macOS updater file
+          # (`.app.tar.gz`) is only made when the `app` bundle is requested.
           - name: linux-x86_64
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            args: --bundles deb,rpm,appimage
+            bundles: deb,rpm,appimage
+            updater_bundles: deb,rpm,appimage
           - name: windows-x86_64
             os: windows-latest
             target: x86_64-pc-windows-msvc
-            args: --bundles nsis,msi
+            bundles: nsis,msi
+            updater_bundles: nsis,msi
           - name: macos-aarch64
             os: macos-latest
             target: aarch64-apple-darwin
-            args: --bundles dmg
+            bundles: dmg
+            updater_bundles: app,dmg
           - name: macos-x86_64
             os: macos-15-intel
             target: x86_64-apple-darwin
-            args: --bundles dmg
+            bundles: dmg
+            updater_bundles: app,dmg
     steps:
       - uses: actions/checkout@v4
 
@@ -83,9 +95,41 @@ jobs:
           key: ${{ matrix.target }}
       - run: npm ci
 
+      # Updater files only once the signing key exists: UPDATER_ARGS and
+      # INCLUDE_UPDATER are set only when the secret is there. The overlay
+      # is a file (not inline JSON) so the same arguments work in bash and
+      # pwsh. Without the key the build is exactly what it was before.
+      - name: Updater signing (when the TAURI_SIGNING_PRIVATE_KEY secret is set)
+        shell: bash
+        env:
+          HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          pubkey=$(python -c "import json; print(json.load(open('src-tauri/tauri.conf.json'))['plugins']['updater']['pubkey'].strip())")
+          placeholder=REPLACE_WITH_UPDATER_PUBKEY
+          if [ "$HAS_UPDATER_KEY" = "true" ]; then
+            if [ -z "$pubkey" ] || [ "$pubkey" = "$placeholder" ]; then
+              echo "::error::TAURI_SIGNING_PRIVATE_KEY is set but plugins.updater.pubkey in src-tauri/tauri.conf.json is still the placeholder. Put the public key there (docs/DEVELOPMENT.md)."
+              exit 1
+            fi
+            echo "updater: signing enabled"
+            echo "BUNDLES=${{ matrix.updater_bundles }}" >> "$GITHUB_ENV"
+            echo "UPDATER_ARGS=--config src-tauri/updater.conf.json" >> "$GITHUB_ENV"
+            echo "INCLUDE_UPDATER=true" >> "$GITHUB_ENV"
+          else
+            if [ -n "$pubkey" ] && [ "$pubkey" != "$placeholder" ]; then
+              echo "::warning::tauri.conf.json has an updater public key but the TAURI_SIGNING_PRIVATE_KEY secret is missing: this release has no latest.json, installed apps will not be offered it."
+            fi
+            echo "updater: no signing key, installers only"
+            echo "BUNDLES=${{ matrix.bundles }}" >> "$GITHUB_ENV"
+          fi
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Empty until the maintainer adds the secrets; only read by the
+          # Tauri CLI when the updater overlay above is in use.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v__VERSION__' }}
           releaseName: "CodeCarbon Desktop ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v__VERSION__' }}"
@@ -100,13 +144,18 @@ jobs:
             Full instructions: https://github.com/mlco2/codecarbon-gui/blob/main/docs/INSTALL.md
           releaseDraft: false
           prerelease: true
-          includeUpdaterJson: false
-          args: --target ${{ matrix.target }} ${{ matrix.args }}
+          # latest.json only for signed builds (INCLUDE_UPDATER unset: false).
+          includeUpdaterJson: ${{ env.INCLUDE_UPDATER == 'true' }}
+          # latest.json's generic `windows-x86_64` entry: the setup.exe the
+          # release notes recommend (`-nsis` / `-msi` entries are added too).
+          updaterJsonPreferNsis: true
+          args: --target ${{ matrix.target }} --bundles ${{ env.BUNDLES }} ${{ env.UPDATER_ARGS }}
 
       - name: Verify the macOS bundle is signed (ad-hoc) and sealed
         if: runner.os == 'macOS'
         run: |
-          # Tauri removes the .app once the DMG is packed: inspect the DMG.
+          # What users install is the DMG (Tauri removes the .app once the
+          # DMG is packed, unless the updater needs it): inspect the DMG.
           dmg=$(find src-tauri/target -path '*/release/bundle/dmg/*.dmg' -type f | head -1)
           echo "dmg: $dmg"
           mount=$(hdiutil attach -nobrowse -readonly "$dmg" | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -1)
@@ -123,7 +172,8 @@ jobs:
           mkdir -p out
           find src-tauri/target -path '*/release/bundle/*' -type f \
             \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.dmg' \
-               -o -name '*.exe' -o -name '*.msi' \) -exec cp {} out/ \;
+               -o -name '*.exe' -o -name '*.msi' \
+               -o -name '*.app.tar.gz' -o -name '*.sig' \) -exec cp {} out/ \;
           ls -la out
       - uses: actions/attest-build-provenance@v2
         with:
@@ -142,6 +192,7 @@ jobs:
       - name: Resolve the tag of a manual run
         if: env.TAG == ''
         run: echo "TAG=v$(python3 -c "import json;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")" >> "$GITHUB_ENV"
+      # Every asset, including latest.json and the updater `.sig` files.
       - name: Download the release assets and publish their checksums
         run: |
           mkdir assets && cd assets
@@ -149,3 +200,26 @@ jobs:
           rm -f SHA256SUMS.txt
           sha256sum * | tee SHA256SUMS.txt
           gh release upload "$TAG" SHA256SUMS.txt -R "$GITHUB_REPOSITORY" --clobber
+      # The four build jobs each merge their platform into latest.json: make
+      # sure none was lost before the release is promoted to "latest".
+      - name: Check latest.json (signed releases)
+        env:
+          HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          if [ "$HAS_UPDATER_KEY" != "true" ]; then
+            echo "no updater signing key: no latest.json expected"
+            exit 0
+          fi
+          python3 - assets/latest.json <<'PY'
+          import json, sys
+          path = sys.argv[1]
+          try:
+              platforms = json.load(open(path))["platforms"]
+          except (OSError, ValueError, KeyError) as e:
+              sys.exit(f"::error::{path}: {e}")
+          wanted = ["darwin-aarch64", "darwin-x86_64", "linux-x86_64", "windows-x86_64"]
+          missing = [p for p in wanted if p not in platforms]
+          print("latest.json platforms:", ", ".join(sorted(platforms)))
+          if missing:
+              sys.exit(f"::error::latest.json lacks {', '.join(missing)}: re-run the release jobs")
+          PY

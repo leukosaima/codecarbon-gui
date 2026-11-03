@@ -136,6 +136,8 @@ messages! {
     NotifyTitle => "CodeCarbon", "CodeCarbon";
     // Duration, energy, CO₂e of the session that just stopped.
     NotifyStopped => "Session: {} · {} · {} CO₂e", "Session\u{a0}: {} · {} · {} CO₂e";
+    // Tray item when a newer release is available (opens the Dashboard).
+    UpdateTo => "Update to {}…", "Mettre à jour vers la version {}…";
 }
 
 /// Replace the `{}` of `template`, in order, with `values`.
@@ -207,6 +209,14 @@ mod tests {
         assert_eq!(
             fill(tr(Lang::Fr, Key::Power), &["23,4 W"]),
             "Puissance\u{a0}: 23,4 W"
+        );
+        assert_eq!(
+            fill(tr(Lang::En, Key::UpdateTo), &["0.2.0"]),
+            "Update to 0.2.0…"
+        );
+        assert_eq!(
+            fill(tr(Lang::Fr, Key::UpdateTo), &["0.2.0"]),
+            "Mettre à jour vers la version 0.2.0…"
         );
         assert_eq!(fill("{} · {}", &["a"]), "a · ");
         assert_eq!(fill("no value", &["a"]), "no value");

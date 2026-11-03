@@ -58,6 +58,7 @@ contributors can follow the Rust and TS parts.
 │   settings.rs  JSON file in the app config dir     │     │
 │   commands.rs  #[tauri::command] API for the UI    │     │
 │   history.rs   emissions.csv → totals, equivalents │     │
+│   updater.rs   signed updates from GitHub Releases │     │
 │        │ events "tracker://state", "history://…"   │     │
 │        ▼                                           │     │
 │   WebView (TypeScript, Vite)                       │     │
@@ -142,7 +143,8 @@ tray icon when opened from it. Four views, switched by a top tab bar
   login, language (System default / English / Français), and an **API** section (endpoint, API key, experiment id, "upload to
   CodeCarbon API") that is plumbed through to the tracker but marked
   *experimental* until the login flow (roadmap) exists.
-* **About** — versions (app, agent, CodeCarbon), links, licence.
+* **About** — versions (app, agent, CodeCarbon), **Check for updates**
+  (§3.3c), links, licence.
 
 Light and dark themes follow the OS. No framework: `src/main.ts` + small
 modules (`api.ts`, `format.ts`, `equivalents.ts`, `barchart.ts`, `i18n/`,
@@ -161,6 +163,43 @@ modules (`api.ts`, `format.ts`, `equivalents.ts`, `barchart.ts`, `i18n/`,
 * Narrow windows (340 px): the power breakdown wraps instead of truncating;
   History tile numbers shrink to fit.
 
+### 3.3c Automatic updates
+
+`updater.rs`, with `tauri-plugin-updater`. Releases are GitHub Releases;
+`latest.json` and the `.sig` signatures are made by `release.yml` once the
+signing key exists (docs/DEVELOPMENT.md, "Enabling automatic updates").
+
+* **Not configured**: while `plugins.updater.pubkey` in tauri.conf.json is
+  the placeholder (or empty), `lib.rs` does not register the plugin; no
+  request is made, About and Settings say updates are not configured.
+* **Checks**: in the background ~10 s after the agent's first `ready`, then
+  when the last check is 24 h old (wall clock, looked at hourly, so a
+  computer that slept checks soon after waking), if `settings.check_updates`
+  (default on). *About → Check for updates* checks at any time. A release
+  is an update only if its semver is higher (build metadata ignored); a
+  404 for `latest.json` means "nothing published yet", not an error.
+* **State**: `TrackerState.update` (`UpdateInfo { version, date, notes }`)
+  and `TrackerState.updater` (`configured`, `phase` idle / checking /
+  downloading / installing, `checked`, `percent`, `error`), changed only
+  by the pure `update_*` transitions in `state.rs`. The panel derives its
+  texts with `src/update.ts`.
+* **Shown as**: a green banner on the Dashboard "CodeCarbon 0.2.0 is
+  available — Install" (with "the current measurement will be stopped and
+  saved first" while measuring), the tray item "Update to 0.2.0…" (opens
+  the Dashboard), and the line under About's button ("You are up to
+  date", "Version 0.2.0 available", "Update check failed: …").
+* **Install**: download with progress (percent in the banner); the plugin
+  verifies the signature against the compiled-in public key
+  (`requireSignedVersion`: the signed version must match). Only then the
+  quit sequence runs without exiting (stop → wait for `stopped` → `quit`
+  the agent → kill), the installer runs (on Windows it takes over and
+  exits the app) and the app relaunches (`AppHandle::request_restart`,
+  which is all that tauri-plugin-process's `restart` command does).
+  If installing fails, the agent is started again and the banner shows
+  the error.
+* The panel only calls `check_for_updates` / `install_update`; it has no
+  updater permission (capabilities/default.json is unchanged).
+
 ### 3.4 Data & privacy
 
 * Settings: `<app config dir>/settings.json`.
@@ -168,7 +207,9 @@ modules (`api.ts`, `format.ts`, `equivalents.ts`, `barchart.ts`, `i18n/`,
   written with CodeCarbon's own CSV output and only read by the app (History
   view); it never leaves the computer.
 * Network: none unless the user leaves country on "detect from IP" (CodeCarbon
-  calls its geolocation endpoint once per start) or enables API upload.
+  calls its geolocation endpoint once per start) or enables API upload;
+  plus, in builds with an updater key, the update check (§3.3c) unless
+  "Check for updates automatically" is off.
 
 ### 3.5 Localisation
 

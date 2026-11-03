@@ -424,6 +424,43 @@ body {
   border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
 }
 
+/* "CodeCarbon 0.2.0 is available — Install": informative, not alarming. */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  font-size: 13px;
+}
+
+.update-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.update-text {
+  font-weight: 600;
+}
+
+.update-note {
+  color: var(--muted);
+}
+
+.update-note.error {
+  color: var(--danger);
+}
+
+.update-banner .btn {
+  flex-shrink: 0;
+}
+
 .hint {
   display: flex;
   align-items: center;
@@ -956,4 +993,9 @@ input[type="checkbox"][role="switch"]:checked::after {
 
 .links li {
   margin: 2px 0;
+}
+
+.about-updates .update-line {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
 }
