@@ -60,7 +60,7 @@ jobs:
             # libssl inside the frozen sidecar (ImportError at sign-in).
             pip_constraints: "cryptography<49"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Linux dependencies
         if: runner.os == 'Linux'
@@ -70,7 +70,7 @@ jobs:
             libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
             librsvg2-dev patchelf
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Build codecarbon-agent (PyInstaller)
@@ -92,7 +92,7 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then bin="$bin.exe"; fi
           "$bin" --selftest
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -133,7 +133,7 @@ jobs:
             echo "BUNDLES=${{ matrix.bundles }}" >> "$GITHUB_ENV"
           fi
 
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Empty until the maintainer adds the secrets; only read by the
@@ -196,7 +196,7 @@ jobs:
                -o -name '*.exe' -o -name '*.msi' \
                -o -name '*.app.tar.gz' -o -name '*.sig' \) -exec cp {} out/ \;
           ls -la out
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: out/*
 
@@ -209,7 +209,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Resolve the tag of a manual run
         if: env.TAG == ''
         run: echo "TAG=v$(python3 -c "import json;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")" >> "$GITHUB_ENV"
