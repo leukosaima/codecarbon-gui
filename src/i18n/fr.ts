@@ -44,6 +44,14 @@ export const fr: Messages = {
   "dashboard.uploading_title": "Vos mesures sont envoyées au tableau de bord CodeCarbon.",
   "dashboard.how_measured": "Comment est-ce mesuré ?",
 
+  // --- Mises à jour (bandeau, À propos) --------------------------------------
+  "update.available": "CodeCarbon {version} est disponible",
+  "update.install": "Installer",
+  "update.downloading": "Téléchargement de CodeCarbon {version}… {percent} %",
+  "update.downloading_unknown": "Téléchargement de CodeCarbon {version}…",
+  "update.installing": "Installation de CodeCarbon {version}… L'application va redémarrer.",
+  "update.stops_measurement": "La mesure en cours sera d'abord arrêtée et enregistrée.",
+
   // --- Carte de bienvenue (premier lancement) --------------------------------
   "welcome.title": "Bienvenue dans CodeCarbon",
   "welcome.tray":
@@ -154,6 +162,13 @@ export const fr: Messages = {
   "settings.save_csv_help": "Ajouter chaque session à emissions.csv",
   "settings.start_on_launch": "Mesurer dès le lancement",
   "settings.launch_at_login": "Lancer à l'ouverture de session",
+  "settings.updates": "Mises à jour",
+  "settings.check_updates": "Rechercher les mises à jour automatiquement",
+  "settings.check_updates_help":
+    "Une fois par jour, sur GitHub. Seules les mises à jour signées par le projet CodeCarbon " +
+    "sont installées.",
+  "settings.updates_not_configured":
+    "Les mises à jour automatiques ne sont pas disponibles dans cette version.",
   "settings.notify_on_stop": "Me prévenir à la fin d'une mesure",
   "settings.pue": "PUE (facultatif)",
   "settings.pue_help": "Efficacité énergétique du centre de données, pour les serveurs.",
@@ -231,6 +246,13 @@ export const fr: Messages = {
   "about.licence":
     "Distribué sous licence MIT. Les chiffres sont calculés par la bibliothèque CodeCarbon : " +
     "ce sont des estimations, pas des mesures de laboratoire.",
+  "about.updates": "Mises à jour",
+  "about.check_updates": "Rechercher des mises à jour",
+  "about.checking": "Recherche de mises à jour…",
+  "about.up_to_date": "Vous avez la dernière version.",
+  "about.update_available": "Version {version} disponible.",
+  "about.updates_not_configured":
+    "Les mises à jour automatiques ne sont pas configurées pour cette version.",
   "about.quit": "Quitter CodeCarbon",
 
   // --- Erreurs venant de Rust (src-tauri/src/error.rs) -------------------------
@@ -274,5 +296,10 @@ export const fr: Messages = {
   "error.auth_unavailable": "La connexion n'est pas disponible avec ce moteur de mesure.",
   "error.dashboard_error": "Problème avec le tableau de bord CodeCarbon : {detail}",
   "error.insecure_login_url": "L'adresse de la page de connexion n'est pas sécurisée (https).",
+  "error.updates_not_configured":
+    "Les mises à jour automatiques ne sont pas configurées pour cette version.",
+  "error.no_update_available": "Il n'y a pas de mise à jour à installer.",
+  "error.update_check_failed": "Échec de la recherche de mises à jour : {detail}",
+  "error.update_install_failed": "La mise à jour n'a pas pu être installée ({detail}).",
   "error.empty_api_key": "Le tableau de bord a renvoyé une clé d'API vide.",
 };

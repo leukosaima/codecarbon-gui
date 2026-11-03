@@ -87,6 +87,10 @@ pub struct Settings {
     pub notify_on_stop: bool,
     /// The user closed the Dashboard's first-run welcome card ("Got it").
     pub welcome_dismissed: bool,
+    /// Look for a new release in the background (shortly after launch,
+    /// then once a day). Only in builds with an updater key; the About
+    /// view's "Check for updates" works either way.
+    pub check_updates: bool,
 }
 
 impl Default for Settings {
@@ -104,6 +108,7 @@ impl Default for Settings {
             language: "system".to_string(),
             notify_on_stop: true,
             welcome_dismissed: false,
+            check_updates: true,
         }
     }
 }
@@ -254,7 +259,18 @@ mod tests {
         assert_eq!(s.language, "system");
         assert!(s.notify_on_stop);
         assert!(!s.welcome_dismissed);
+        assert!(s.check_updates);
         assert!(s.validate().is_ok());
+    }
+
+    #[test]
+    fn check_updates_flag() {
+        let old: Settings = serde_json::from_str(r#"{"interval_secs": 5}"#).unwrap();
+        assert!(old.check_updates, "older files check for updates");
+        let s: Settings = serde_json::from_str(r#"{"check_updates": false}"#).unwrap();
+        assert!(!s.check_updates);
+        let v = serde_json::to_value(s.normalized()).unwrap();
+        assert_eq!(v["check_updates"], false);
     }
 
     #[test]

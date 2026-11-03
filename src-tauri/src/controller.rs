@@ -56,7 +56,7 @@ pub struct AppCore {
 }
 
 /// Recover the data of a poisoned mutex instead of panicking.
-fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -584,32 +584,61 @@ pub fn quit(app: &AppHandle) {
     }
     let app = app.clone();
     async_runtime::spawn(async move {
-        let core = app.state::<AppCore>();
-        let phase = core.tracker().phase;
-        if matches!(phase, Phase::Starting | Phase::Running | Phase::Stopping) {
-            log::info!("quit: stopping the running measurement");
-            if phase != Phase::Stopping {
-                let _ = stop(&app);
-            }
-            let stopped = wait_until(QUIT_TIMEOUT, || {
-                !matches!(core.tracker().phase, Phase::Stopping | Phase::Starting)
-            })
-            .await;
-            if !stopped {
-                log::warn!("quit: no `stopped` within {QUIT_TIMEOUT:?}");
-            }
-        }
-        core.agent.begin_shutdown();
-        if core.agent.send(&AgentCommand::Quit).is_ok() {
-            let exited = wait_until(QUIT_TIMEOUT, || !core.agent.is_alive()).await;
-            if !exited {
-                log::warn!("quit: agent still alive after {QUIT_TIMEOUT:?}, killing it");
-            }
-        }
-        core.agent.kill();
+        shut_down_engine(&app, "quit").await;
         log::info!("bye");
         app.exit(0);
     });
+}
+
+/// The quit sequence without the exit, before installing an update: the
+/// running measurement is stopped and saved, the agent quits (the
+/// installer replaces its binary). `false` when the app is already
+/// quitting (the update is then not installed).
+pub async fn shut_down_for_update(app: &AppHandle) -> bool {
+    let core = app.state::<AppCore>();
+    if core.quitting.swap(true, Ordering::SeqCst) {
+        return false;
+    }
+    shut_down_engine(app, "update").await;
+    true
+}
+
+/// Installing the update failed after [`shut_down_for_update`]: back to
+/// normal, with a fresh agent.
+pub fn resume_after_failed_update(app: &AppHandle) {
+    let core = app.state::<AppCore>();
+    core.quitting.store(false, Ordering::SeqCst);
+    core.tracker().agent_restarting();
+    publish(app);
+    core.agent.start();
+}
+
+/// Stop the measurement (≤ 3 s for `stopped`), ask the agent to quit
+/// (≤ 3 s), then kill it. `why` is for the log.
+async fn shut_down_engine(app: &AppHandle, why: &str) {
+    let core = app.state::<AppCore>();
+    let phase = core.tracker().phase;
+    if matches!(phase, Phase::Starting | Phase::Running | Phase::Stopping) {
+        log::info!("{why}: stopping the running measurement");
+        if phase != Phase::Stopping {
+            let _ = stop(app);
+        }
+        let stopped = wait_until(QUIT_TIMEOUT, || {
+            !matches!(core.tracker().phase, Phase::Stopping | Phase::Starting)
+        })
+        .await;
+        if !stopped {
+            log::warn!("{why}: no `stopped` within {QUIT_TIMEOUT:?}");
+        }
+    }
+    core.agent.begin_shutdown();
+    if core.agent.send(&AgentCommand::Quit).is_ok() {
+        let exited = wait_until(QUIT_TIMEOUT, || !core.agent.is_alive()).await;
+        if !exited {
+            log::warn!("{why}: agent still alive after {QUIT_TIMEOUT:?}, killing it");
+        }
+    }
+    core.agent.kill();
 }
 
 /// Last-chance, *blocking* stop for exits that bypass [`quit`]: Cmd+Q and
@@ -664,7 +693,7 @@ fn wait_until_blocking(timeout: Duration, condition: impl Fn() -> bool) -> bool 
 }
 
 /// Poll `condition` every 50 ms until it is true or `timeout` elapses.
-async fn wait_until(timeout: Duration, condition: impl Fn() -> bool) -> bool {
+pub(crate) async fn wait_until(timeout: Duration, condition: impl Fn() -> bool) -> bool {
     let deadline = Instant::now() + timeout;
     loop {
         if condition() {

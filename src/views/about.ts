@@ -1,8 +1,9 @@
-/** About: versions, links, licence. */
+/** About: versions, updates, links, licence. */
 import { getVersion } from "@tauri-apps/api/app";
-import { errorMessage, openUrl, quitApp, type TrackerState } from "../api";
-import { h, setText } from "../dom";
-import { live, type MessageKey } from "../i18n/i18n";
+import { checkForUpdates, errorMessage, openUrl, quitApp, type TrackerState } from "../api";
+import { h, setText, show } from "../dom";
+import { isAppError, live, type MessageKey } from "../i18n/i18n";
+import { updateStatusLine } from "../update";
 import logoUrl from "../../src-tauri/icons/128x128@2x.png";
 
 /** Label (a message key, or a literal name), URL. */
@@ -20,6 +21,13 @@ export class AboutView {
   private readonly pythonVersion = h("dd", {}, "–");
   private readonly platform = h("dd", {}, "–");
   private readonly message = h("p", { class: "form-message error", role: "status" });
+  private readonly checkButton = h(
+    "button",
+    { class: "btn btn-small", type: "button" },
+    live("about.check_updates"),
+  );
+  /** "You are up to date.", "Version 0.2.0 available.", "Update check failed: …" */
+  private readonly updateLine = h("p", { class: "muted small update-line", role: "status" });
 
   constructor() {
     const links = LINKS.map(([label, url]) => {
@@ -33,6 +41,17 @@ export class AboutView {
     });
     const quit = h("button", { class: "btn", type: "button" }, live("about.quit"));
     quit.addEventListener("click", () => void quitApp());
+    this.checkButton.addEventListener("click", () => {
+      this.checkButton.disabled = true;
+      setText(this.message, "");
+      // The result is rendered from the state (`update`); a failed check
+      // is in `updater.error`, anything else is shown here.
+      checkForUpdates().catch((e: unknown) => {
+        if (!(isAppError(e) && e.code === "update_check_failed")) {
+          setText(this.message, errorMessage(e));
+        }
+      });
+    });
 
     this.root = h(
       "section",
@@ -62,6 +81,17 @@ export class AboutView {
         h("dt", {}, live("about.platform")),
         this.platform,
       ),
+      h(
+        "section",
+        { class: "card about-updates" },
+        h(
+          "div",
+          { class: "card-head" },
+          h("span", {}, live("about.updates")),
+          this.checkButton,
+        ),
+        this.updateLine,
+      ),
       h("ul", { class: "links" }, ...links),
       h("p", { class: "muted small" }, live("about.licence")),
       this.message,
@@ -79,5 +109,9 @@ export class AboutView {
     setText(this.codecarbonVersion, r?.codecarbon_version || "–");
     setText(this.pythonVersion, r?.python_version || "–");
     setText(this.platform, r?.platform || "–");
+    setText(this.updateLine, updateStatusLine(state));
+    show(this.updateLine, this.updateLine.textContent !== "");
+    show(this.checkButton, state.updater.configured);
+    this.checkButton.disabled = state.updater.phase !== "idle";
   }
 }

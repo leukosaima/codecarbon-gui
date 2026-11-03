@@ -7,6 +7,7 @@ import {
   errorMessage,
   getEquivalents,
   getFirstRunInfo,
+  installUpdate,
   type Equivalent,
   openDataFolder,
   restartAgent,
@@ -23,6 +24,7 @@ import { cpuMethod, statusLine } from "../format";
 import { best, describe as describeEquivalent } from "../equivalents";
 import { getLocale, live, liveAttr, n, t, tNodes, type Locale, type MessageKey } from "../i18n/i18n";
 import { sparkline, WINDOW_SECS } from "../sparkline";
+import { updateBanner } from "../update";
 import { showWelcome } from "../welcome";
 
 const CHART_W = 300;
@@ -53,6 +55,20 @@ export class DashboardView {
     live("dashboard.retry"),
   );
   private readonly loading = h("div", { class: "hint" }, spinner(), live("common.starting_engine"));
+  // "CodeCarbon 0.2.0 is available — Install" (see update.ts).
+  private readonly updateText = h("span", { class: "update-text" });
+  private readonly updateNote = h("small", { class: "update-note" });
+  private readonly updateInstall = h(
+    "button",
+    { class: "btn btn-small", type: "button" },
+    live("update.install"),
+  );
+  private readonly updateCard = h(
+    "div",
+    { class: "update-banner", role: "status" },
+    h("div", { class: "update-body" }, this.updateText, this.updateNote),
+    this.updateInstall,
+  );
   private readonly button = h("button", { class: "btn btn-primary btn-big", type: "button" });
   private readonly power = tile("dashboard.power");
   private readonly co2 = tile("dashboard.co2");
@@ -91,6 +107,11 @@ export class DashboardView {
     this.banner.append(this.bannerText, this.retry);
     this.retry.addEventListener("click", () => void this.run(restartAgent));
     this.button.addEventListener("click", () => this.onButton());
+    this.updateInstall.addEventListener("click", () => {
+      this.updateInstall.disabled = true; // until the next state (downloading)
+      void this.run(installUpdate);
+    });
+    show(this.updateCard, false);
 
     const minutes = WINDOW_SECS / 60;
     const chart = liveAttr(
@@ -163,6 +184,7 @@ export class DashboardView {
       "section",
       { class: "view dashboard" },
       this.banner,
+      this.updateCard,
       this.loading,
       this.welcome,
       this.button,
@@ -271,6 +293,7 @@ export class DashboardView {
     setText(this.bannerText, state.error ? errorMessage(state.error) : "");
     show(this.retry, phase === "agent_error");
     show(this.loading, state.agent_ready === null && phase !== "agent_error");
+    this.renderUpdate(state);
 
     // Start/Stop button.
     this.button.replaceChildren();
@@ -370,6 +393,19 @@ export class DashboardView {
 
     this.renderDetails(state);
     this.renderWelcome();
+  }
+
+  /** The update banner: available → Install → progress → restart. */
+  private renderUpdate(state: TrackerState): void {
+    const banner = updateBanner(state);
+    show(this.updateCard, banner !== null);
+    if (!banner) return;
+    setText(this.updateText, banner.text);
+    setText(this.updateNote, banner.note ?? "");
+    show(this.updateNote, banner.note !== null);
+    this.updateNote.classList.toggle("error", banner.noteIsError);
+    show(this.updateInstall, banner.canInstall);
+    this.updateInstall.disabled = false;
   }
 
   /**

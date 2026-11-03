@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codecarbon-agent"
-version = "0.1.4"
+version = "0.1.5"
 description = "Sidecar of CodeCarbon Desktop: drives CodeCarbon over a JSON-lines stdin/stdout protocol"
 readme = "README.md"
 license = { text = "MIT" }

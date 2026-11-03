@@ -63,6 +63,19 @@ your distribution's *Extensions* app or
 and the icon will appear in the top bar. KDE, XFCE, Cinnamon and MATE show
 tray icons out of the box.
 
+## Updates
+
+Newer versions announce themselves: a banner on the panel's first tab
+("CodeCarbon 0.2.0 is available — **Install**") and an *Update to…* item
+in the tray menu. Installing stops a running measurement first (it is
+saved), then the app restarts in the new version. Updates are only
+installed if they are signed by the CodeCarbon Desktop project. You can
+turn off the daily check in *Settings → Updates*, and check by hand in
+*About*. Versions released before automatic updates were switched on
+cannot update themselves: download the new version once from the Releases
+page. On Linux, `.deb` / `.rpm` updates ask for your password; the
+AppImage updates in place.
+
 ## Checking that your download is genuine (optional)
 
 Because the installers are not code-signed yet, each release also publishes

@@ -97,6 +97,32 @@ export interface TrackerState {
   /** Translated with `errorMessage`. */
   error: AppError | null;
   account: AccountState;
+  /** A newer release (Dashboard banner, tray item). */
+  update: UpdateInfo | null;
+  updater: UpdaterStatus;
+}
+
+// --- Updates (updater.rs) ----------------------------------------------------
+
+export interface UpdateInfo {
+  version: string;
+  /** RFC 3339, from latest.json. */
+  date: string | null;
+  notes: string | null;
+}
+
+export type UpdatePhase = "idle" | "checking" | "downloading" | "installing";
+
+export interface UpdaterStatus {
+  /** false: this build has no updater key; nothing is ever checked. */
+  configured: boolean;
+  phase: UpdatePhase;
+  /** A check completed during this run ("You are up to date"). */
+  checked: boolean;
+  /** Download progress 0–100; null while the size is unknown. */
+  percent: number | null;
+  /** `update_check_failed` or `update_install_failed`. */
+  error: AppError | null;
 }
 
 // --- CodeCarbon dashboard account (protocol v2) ------------------------------
@@ -188,6 +214,8 @@ export interface Settings {
   notify_on_stop: boolean;
   /** The Dashboard's first-run card was closed ("Got it"). */
   welcome_dismissed: boolean;
+  /** Background update checks (at launch, then daily). */
+  check_updates: boolean;
 }
 
 /** What the Dashboard's first-run welcome card needs (`get_first_run_info`). */
@@ -284,6 +312,11 @@ export const getEquivalents = (emissionsKg: number, energyKwh: number): Promise<
   invoke<Equivalent[]>("get_equivalents", { emissionsKg, energyKwh });
 export const openUrl = (url: string): Promise<void> => invoke("open_url", { url });
 export const quitApp = (): Promise<void> => invoke("quit_app");
+/** The newer release, or null when up to date (the state follows too). */
+export const checkForUpdates = (): Promise<UpdateInfo | null> =>
+  invoke<UpdateInfo | null>("check_for_updates");
+/** Starts the download; progress and errors arrive in `state.updater`. */
+export const installUpdate = (): Promise<void> => invoke("install_update");
 
 export const accountSignIn = (): Promise<void> => invoke("account_sign_in");
 export const accountCancelSignIn = (): Promise<void> => invoke("account_cancel_sign_in");

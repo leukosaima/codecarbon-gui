@@ -4,6 +4,14 @@ All notable changes to CodeCarbon Desktop. Versions are tagged `vX.Y.Z` and
 published as GitHub pre-releases with installers for Windows, macOS (Apple
 Silicon and Intel) and Linux.
 
+## 0.1.5 — automatic updates (needs the signing key)
+- The app can check GitHub Releases for a new version (shortly after launch,
+  then daily; *Settings → Updates*), show it on the Dashboard and in the
+  tray, and install it after stopping and saving a running measurement.
+  Only updates signed with the project's key are accepted; switched on once
+  the maintainers set up the key (builds without it never check).
+- About: *Check for updates*.
+
 ## 0.1.4 — first-run help and notifications
 - Welcome card on first launch explaining the tray, Start/Stop and privacy.
 - Native notification with the session summary when a measurement stops

@@ -45,6 +45,14 @@ export const en = {
   "dashboard.uploading_title": "Your measurements are sent to the CodeCarbon dashboard.",
   "dashboard.how_measured": "How is this measured?",
 
+  // --- Updates (Dashboard banner, About) -------------------------------------
+  "update.available": "CodeCarbon {version} is available",
+  "update.install": "Install",
+  "update.downloading": "Downloading CodeCarbon {version}… {percent} %",
+  "update.downloading_unknown": "Downloading CodeCarbon {version}…",
+  "update.installing": "Installing CodeCarbon {version}… The app will restart.",
+  "update.stops_measurement": "The current measurement will be stopped and saved first.",
+
   // --- First-run welcome card (Dashboard) ------------------------------------
   "welcome.title": "Welcome to CodeCarbon",
   "welcome.tray":
@@ -150,6 +158,11 @@ export const en = {
   "settings.start_on_launch": "Start measuring on launch",
   "settings.launch_at_login": "Launch at login",
   "settings.notify_on_stop": "Notify me when a measurement stops",
+  "settings.updates": "Updates",
+  "settings.check_updates": "Check for updates automatically",
+  "settings.check_updates_help":
+    "Once a day, from GitHub. Only updates signed by the CodeCarbon project are installed.",
+  "settings.updates_not_configured": "Automatic updates are not available in this build.",
   "settings.pue": "PUE (optional)",
   "settings.pue_help": "Power usage effectiveness, for servers in a datacenter.",
   "settings.ci": "Carbon intensity override (g/kWh, optional)",
@@ -225,6 +238,12 @@ export const en = {
     "Released under the MIT licence. Numbers are computed by the CodeCarbon library; " +
     "they are estimates, not lab measurements.",
   "about.quit": "Quit CodeCarbon",
+  "about.updates": "Updates",
+  "about.check_updates": "Check for updates",
+  "about.checking": "Checking for updates…",
+  "about.up_to_date": "You are up to date.",
+  "about.update_available": "Version {version} available.",
+  "about.updates_not_configured": "Automatic updates are not configured for this build.",
 
   // --- Errors from Rust (src-tauri/src/error.rs) -------------------------------
   "error.engine_not_ready": "The measurement engine is not ready yet.",
@@ -264,6 +283,10 @@ export const en = {
   "error.dashboard_error": "Problem with the CodeCarbon dashboard: {detail}",
   "error.insecure_login_url": "The login page address is not secure (https).",
   "error.empty_api_key": "The dashboard returned an empty API key.",
+  "error.updates_not_configured": "Automatic updates are not configured for this build.",
+  "error.no_update_available": "There is no update to install.",
+  "error.update_check_failed": "Update check failed: {detail}",
+  "error.update_install_failed": "The update could not be installed ({detail}).",
 } as const;
 
 export type MessageKey = keyof typeof en;

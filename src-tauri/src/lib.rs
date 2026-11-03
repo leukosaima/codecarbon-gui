@@ -13,6 +13,7 @@
 //! * [`history`]    – past sessions from `emissions.csv`, totals, equivalents
 //! * [`i18n`]       – tray / menu / notification strings in English and French
 //! * [`error`]      – errors sent to the panel as translatable codes
+//! * [`updater`]    – update checks and installs (GitHub Releases, signed)
 
 pub mod agent;
 pub mod commands;
@@ -25,6 +26,7 @@ pub mod protocol;
 pub mod settings;
 pub mod state;
 pub mod tray;
+pub mod updater;
 
 use std::sync::Arc;
 
@@ -71,6 +73,12 @@ pub fn run() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     log::info!("CodeCarbon {} starting", env!("CARGO_PKG_VERSION"));
 
+    let context = tauri::generate_context!();
+    // A build without a real updater public key (placeholder in
+    // tauri.conf.json) does not register the updater at all: no request
+    // is ever made, and the panel says updates are not configured.
+    let updates_configured = updater::pubkey_configured(context.config().plugins.0.get("updater"));
+
     let builder = tauri::Builder::default()
         // Must be the first plugin: a second launch just shows the panel.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -86,6 +94,12 @@ pub fn run() {
         // "Measurement stopped" notifications, sent from Rust only (the
         // panel has no notification permission).
         .plugin(tauri_plugin_notification::init());
+    // Signed updates; called from Rust only (no permission for the panel).
+    let builder = if updates_configured {
+        builder.plugin(tauri_plugin_updater::Builder::new().build())
+    } else {
+        builder
+    };
 
     // macOS: Tauri's default app menu has a "Quit" that terminates the
     // process at once (no `ExitRequested`). Ours stops the measurement
@@ -128,9 +142,11 @@ pub fn run() {
             commands::account_refresh_catalog,
             commands::account_create,
             commands::account_select_experiment,
+            commands::check_for_updates,
+            commands::install_update,
         ])
-        .setup(|app| {
-            setup(app)?;
+        .setup(move |app| {
+            setup(app, updates_configured)?;
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -140,7 +156,7 @@ pub fn run() {
                 let _ = window.hide();
             }
         })
-        .build(tauri::generate_context!());
+        .build(context);
 
     let app = match app {
         Ok(app) => app,
@@ -176,7 +192,7 @@ pub fn run() {
 }
 
 /// Load settings, register shared state, create the tray, spawn the agent.
-fn setup(app: &mut App) -> anyhow::Result<()> {
+fn setup(app: &mut App, updates_configured: bool) -> anyhow::Result<()> {
     // No Dock icon: this is a menu-bar app.
     #[cfg(target_os = "macos")]
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -208,6 +224,8 @@ fn setup(app: &mut App) -> anyhow::Result<()> {
         Some(credentials),
     );
     app.manage(AppCore::new(settings, settings_path, data_dir, agent));
+    app.manage(updater::Updates::new(updates_configured));
+    app.state::<AppCore>().tracker().updater.configured = updates_configured;
 
     // A missing tray (e.g. a Linux desktop without StatusNotifier support)
     // must not prevent the app from running.
@@ -229,6 +247,8 @@ fn setup(app: &mut App) -> anyhow::Result<()> {
     }
 
     app.state::<AppCore>().agent.start();
+    // In the background, once the agent is ready (never blocks start-up).
+    updater::start_background_checks(&handle);
 
     // Developer convenience (and desktops without a tray): show the panel
     // right away instead of starting hidden.

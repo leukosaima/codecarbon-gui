@@ -109,6 +109,56 @@ describe("first-run card and notification texts", () => {
   });
 });
 
+describe("update texts", () => {
+  // key → placeholders it must have (the same in both languages).
+  const keys = {
+    "update.available": ["version"],
+    "update.install": [],
+    "update.downloading": ["percent", "version"],
+    "update.downloading_unknown": ["version"],
+    "update.installing": ["version"],
+    "update.stops_measurement": [],
+    "about.updates": [],
+    "about.check_updates": [],
+    "about.checking": [],
+    "about.up_to_date": [],
+    "about.update_available": ["version"],
+    "about.updates_not_configured": [],
+    "settings.updates": [],
+    "settings.check_updates": [],
+    "settings.check_updates_help": [],
+    "settings.updates_not_configured": [],
+    "error.updates_not_configured": [],
+    "error.no_update_available": [],
+    "error.update_check_failed": ["detail"],
+    "error.update_install_failed": ["detail"],
+  } as const;
+
+  it("exist in both languages with their placeholders", () => {
+    for (const [key, params] of Object.entries(keys) as [keyof typeof keys, readonly string[]][]) {
+      expect(placeholders(en[key]), key).toEqual([...params]);
+      expect(placeholders(fr[key]), key).toEqual([...params]);
+    }
+  });
+
+  it("read as specified", () => {
+    expect(t("update.available", { version: "0.2.0" })).toBe("CodeCarbon 0.2.0 is available");
+    expect(t("update.install")).toBe("Install");
+    expect(t("settings.check_updates")).toBe("Check for updates automatically");
+    expect(t("about.check_updates")).toBe("Check for updates");
+    expect(t("about.up_to_date")).toBe("You are up to date.");
+    expect(errorText({ code: "update_check_failed", detail: "timeout", message: "" })).toBe(
+      "Update check failed: timeout",
+    );
+    setLocale("fr", ["fr-FR"]);
+    expect(t("update.available", { version: "0.2.0" })).toBe("CodeCarbon 0.2.0 est disponible");
+    expect(t("settings.check_updates")).toBe("Rechercher les mises à jour automatiquement");
+    expect(errorText({ code: "update_check_failed", detail: "timeout", message: "" })).toBe(
+      "Échec de la recherche de mises à jour\u00a0: timeout",
+    );
+  });
+});
+
 describe("t / n", () => {
   it("interpolates named placeholders", () => {
     expect(t("dashboard.per_hour", { value: "3 g" })).toBe("3 g per hour");

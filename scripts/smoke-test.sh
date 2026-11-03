@@ -8,6 +8,9 @@
 #
 #   agent spawned → ready → started → measurements → stopped → quit → exit 0
 #
+# and that the updater is either "not configured" (placeholder public key:
+# no update check at all) or enabled.
+#
 # Needs: xvfb-run (packages `xvfb` and `xauth` on Debian/Ubuntu).
 #
 # Usage:
@@ -103,6 +106,16 @@ check "measurements received" '← agent: \{"event": ?"measurement"' 3
 check "stopped on quit" '← agent: \{"event": ?"stopped"'
 check "agent quit cleanly" "agent exited \(exit code 0\)"
 check "app exited with 0" "SMOKE: app exit code 0"
+# Updater: a build with the placeholder public key never checks (no network).
+check "updater set up" "updater: (not configured|enabled)"
+if grep -q "updater: not configured" "$log"; then
+  if grep -qE "update available|no update available|update check failed|checking for updates" "$log"; then
+    echo "  FAIL  unconfigured updater made a check"
+    failures=$((failures + 1))
+  else
+    echo "  ok    unconfigured updater made no check"
+  fi
+fi
 if [[ "$agent_kind" == "real" ]]; then
   if [[ -s "$XDG_DATA_HOME/io.codecarbon.desktop/measurements/emissions.csv" ]]; then
     echo "  ok    emissions.csv written"

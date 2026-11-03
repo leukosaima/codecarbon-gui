@@ -75,6 +75,58 @@ pub struct TrackerState {
     pub error: Option<AppError>,
     /// The CodeCarbon dashboard account (protocol v2).
     pub account: AccountState,
+    /// A newer release found by the updater (Dashboard banner, tray item).
+    pub update: Option<UpdateInfo>,
+    /// What the updater is doing (About, Dashboard banner).
+    pub updater: UpdaterStatus,
+}
+
+/// A newer release announced by `latest.json` (see `updater.rs`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct UpdateInfo {
+    pub version: String,
+    /// Publication date (RFC 3339) from `latest.json`, if any.
+    pub date: Option<String>,
+    /// Release notes from `latest.json`, if any.
+    pub notes: Option<String>,
+}
+
+/// What the updater is doing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdatePhase {
+    #[default]
+    Idle,
+    /// Fetching `latest.json`.
+    Checking,
+    /// Downloading the installer (see [`UpdaterStatus::percent`]).
+    Downloading,
+    /// Downloaded and verified: stopping the measurement, installing,
+    /// then the app restarts.
+    Installing,
+}
+
+/// The updater as the panel sees it. Changed only through the
+/// `update_*` methods of [`TrackerState`].
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct UpdaterStatus {
+    /// This build has an updater public key. When `false` nothing is ever
+    /// checked and the panel says updates are not configured.
+    pub configured: bool,
+    pub phase: UpdatePhase,
+    /// A check has completed during this run ("You are up to date").
+    pub checked: bool,
+    /// Download progress, 0–100; `None` while the size is unknown.
+    pub percent: Option<u8>,
+    /// The last check or install error.
+    pub error: Option<AppError>,
+}
+
+/// Download progress in percent (`None` without a known, non-zero size).
+pub fn percent(downloaded: u64, total: Option<u64>) -> Option<u8> {
+    let total = total.filter(|&t| t > 0)?;
+    let p = u128::from(downloaded) * 100 / u128::from(total);
+    Some(p.min(100) as u8)
 }
 
 /// Sign-in state of the CodeCarbon dashboard account.
@@ -315,6 +367,8 @@ impl Default for TrackerState {
             notes: Vec::new(),
             error: None,
             account: AccountState::default(),
+            update: None,
+            updater: UpdaterStatus::default(),
         }
     }
 }
@@ -525,6 +579,71 @@ impl TrackerState {
             AgentEvent::Unknown => {}
         }
         Vec::new()
+    }
+
+    // --- Updater (pure transitions, driven by `updater.rs`) -------------------
+
+    /// A check begins. `false` (and no change) when the updater is busy.
+    pub fn update_check_started(&mut self) -> bool {
+        if self.updater.phase != UpdatePhase::Idle {
+            return false;
+        }
+        self.updater.phase = UpdatePhase::Checking;
+        self.updater.error = None;
+        true
+    }
+
+    /// A check ended: the newer release (`Some`), none, or why it failed.
+    /// A failed check keeps the update found earlier, if any.
+    pub fn update_check_finished(&mut self, result: Result<Option<UpdateInfo>, String>) {
+        if self.updater.phase == UpdatePhase::Checking {
+            self.updater.phase = UpdatePhase::Idle;
+        }
+        self.updater.checked = true;
+        match result {
+            Ok(update) => {
+                self.update = update;
+                self.updater.error = None;
+            }
+            Err(detail) => self.updater.error = Some(AppError::UpdateCheckFailed(detail)),
+        }
+    }
+
+    /// "Install" was pressed. `false` (and no change) unless an update is
+    /// known and the updater is idle.
+    pub fn update_download_started(&mut self) -> bool {
+        if self.update.is_none() || self.updater.phase != UpdatePhase::Idle {
+            return false;
+        }
+        self.updater.phase = UpdatePhase::Downloading;
+        self.updater.percent = None;
+        self.updater.error = None;
+        true
+    }
+
+    /// Bytes received so far. `true` when the shown percentage changed
+    /// (the controller only publishes then, not for every chunk).
+    pub fn update_progress(&mut self, downloaded: u64, total: Option<u64>) -> bool {
+        if self.updater.phase != UpdatePhase::Downloading {
+            return false;
+        }
+        let p = percent(downloaded, total);
+        let changed = p != self.updater.percent;
+        self.updater.percent = p;
+        changed
+    }
+
+    /// Downloaded and verified: the engine stops, the installer runs.
+    pub fn update_installing(&mut self) {
+        self.updater.phase = UpdatePhase::Installing;
+        self.updater.percent = Some(100);
+    }
+
+    /// Downloading or installing failed; "Install" can be pressed again.
+    pub fn update_install_failed(&mut self, detail: String) {
+        self.updater.phase = UpdatePhase::Idle;
+        self.updater.percent = None;
+        self.updater.error = Some(AppError::UpdateInstallFailed(detail));
     }
 
     fn push_measurement(&mut self, m: &Measurement) {
@@ -1183,5 +1302,114 @@ mod tests {
         assert_eq!(v["account"]["saving"], serde_json::Value::Null);
         let fresh = serde_json::to_value(TrackerState::default()).unwrap();
         assert_eq!(fresh["account"]["phase"], "unknown");
+    }
+
+    fn update_info(version: &str) -> UpdateInfo {
+        UpdateInfo {
+            version: version.into(),
+            date: Some("2026-11-01T10:00:00Z".into()),
+            notes: None,
+        }
+    }
+
+    #[test]
+    fn download_percent() {
+        assert_eq!(percent(0, None), None);
+        assert_eq!(
+            percent(10, Some(0)),
+            None,
+            "no size: unknown, not a division by 0"
+        );
+        assert_eq!(percent(0, Some(200)), Some(0));
+        assert_eq!(
+            percent(199, Some(200)),
+            Some(99),
+            "rounded down: 100 % only when done"
+        );
+        assert_eq!(percent(200, Some(200)), Some(100));
+        assert_eq!(percent(500, Some(200)), Some(100), "capped");
+        assert_eq!(percent(u64::MAX, Some(u64::MAX)), Some(100), "no overflow");
+    }
+
+    #[test]
+    fn update_check_reducer() {
+        let mut s = TrackerState::default();
+        assert_eq!(s.updater.phase, UpdatePhase::Idle);
+        assert!(!s.updater.checked);
+
+        assert!(s.update_check_started());
+        assert_eq!(s.updater.phase, UpdatePhase::Checking);
+        assert!(!s.update_check_started(), "one check at a time");
+        s.update_check_finished(Ok(None));
+        assert_eq!(s.updater.phase, UpdatePhase::Idle);
+        assert!(s.updater.checked, "→ \"You are up to date\"");
+        assert_eq!(s.update, None);
+
+        assert!(s.update_check_started());
+        s.update_check_finished(Ok(Some(update_info("0.2.0"))));
+        assert_eq!(s.update, Some(update_info("0.2.0")));
+        assert_eq!(s.updater.error, None);
+
+        // A failed check is shown but does not forget the update found.
+        assert!(s.update_check_started());
+        s.update_check_finished(Err("offline".into()));
+        assert_eq!(s.update, Some(update_info("0.2.0")));
+        assert_eq!(
+            s.updater.error,
+            Some(AppError::UpdateCheckFailed("offline".into()))
+        );
+        // The next check clears the error.
+        assert!(s.update_check_started());
+        assert_eq!(s.updater.error, None);
+        s.update_check_finished(Ok(None));
+        assert_eq!(s.update, None, "the release was withdrawn");
+
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["updater"]["phase"], "idle");
+        assert_eq!(v["updater"]["configured"], false);
+        assert!(v["update"].is_null());
+    }
+
+    #[test]
+    fn update_install_reducer() {
+        let mut s = TrackerState::default();
+        assert!(!s.update_download_started(), "nothing to install");
+        assert!(!s.update_progress(10, Some(100)), "not downloading");
+
+        s.update = Some(update_info("0.2.0"));
+        assert!(s.update_check_started());
+        assert!(!s.update_download_started(), "not while checking");
+        s.update_check_finished(Ok(Some(update_info("0.2.0"))));
+
+        assert!(s.update_download_started());
+        assert_eq!(s.updater.phase, UpdatePhase::Downloading);
+        assert!(!s.update_download_started(), "one install at a time");
+        assert!(!s.update_check_started(), "no check while installing");
+        assert!(
+            !s.update_progress(5, None),
+            "unknown size: nothing to show yet"
+        );
+        assert!(s.update_progress(5, Some(100)));
+        assert!(!s.update_progress(5, Some(100)), "same percent: no publish");
+        assert!(s.update_progress(42, Some(100)));
+        assert_eq!(s.updater.percent, Some(42));
+
+        s.update_install_failed("signature mismatch".into());
+        assert_eq!(s.updater.phase, UpdatePhase::Idle);
+        assert_eq!(s.updater.percent, None);
+        assert_eq!(
+            s.updater.error,
+            Some(AppError::UpdateInstallFailed("signature mismatch".into()))
+        );
+        assert_eq!(s.update, Some(update_info("0.2.0")), "can try again");
+
+        assert!(s.update_download_started());
+        assert_eq!(s.updater.error, None);
+        s.update_installing();
+        assert_eq!(s.updater.phase, UpdatePhase::Installing);
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["updater"]["phase"], "installing");
+        assert_eq!(v["updater"]["percent"], 100);
+        assert_eq!(v["update"]["version"], "0.2.0");
     }
 }

@@ -11,7 +11,7 @@ use crate::error::AppError;
 use crate::history::{self, Equivalent, Session};
 use crate::protocol::ApiKind;
 use crate::settings::Settings;
-use crate::state::TrackerState;
+use crate::state::{TrackerState, UpdateInfo};
 
 type CmdResult<T> = Result<T, AppError>;
 
@@ -201,4 +201,20 @@ pub async fn account_select_experiment(
     experiment_id: String,
 ) -> CmdResult<()> {
     controller::account_select_experiment(&app, organization_id, project_id, experiment_id)
+}
+
+// --- Updates -------------------------------------------------------------
+
+/// "Check for updates" (About): the newer release, or `None` when up to
+/// date. The state (`updater`, `update`) follows as well.
+#[tauri::command]
+pub async fn check_for_updates(app: AppHandle) -> CmdResult<Option<UpdateInfo>> {
+    crate::updater::check(&app).await
+}
+
+/// "Install": download in the background (progress in the state), stop
+/// the measurement and the engine, install, restart.
+#[tauri::command]
+pub async fn install_update(app: AppHandle) -> CmdResult<()> {
+    crate::updater::start_install(&app)
 }

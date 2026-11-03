@@ -13,7 +13,7 @@ use tauri::AppHandle;
 use crate::controller;
 use crate::format;
 use crate::i18n::{fill, tr, Key, Lang};
-use crate::state::{Phase, TrackerState};
+use crate::state::{Phase, TrackerState, UpdatePhase};
 
 const TRAY_ID: &str = "codecarbon";
 
@@ -37,6 +37,7 @@ const ID_SHOW: &str = "show";
 const ID_SETTINGS: &str = "settings";
 const ID_DATA: &str = "data_folder";
 const ID_QUIT: &str = "quit";
+const ID_UPDATE: &str = "update";
 
 /// Handles on the tray and the menu items we update.
 pub struct Tray {
@@ -50,8 +51,14 @@ pub struct Tray {
     settings: MenuItem<tauri::Wry>,
     data: MenuItem<tauri::Wry>,
     quit: MenuItem<tauri::Wry>,
+    /// "Update to 0.2.0…", in the menu only while an update is available.
+    update: MenuItem<tauri::Wry>,
     /// What is currently displayed, to avoid needless updates.
     shows_live_values: bool,
+    /// The version the update item names, if it is in the menu.
+    shows_update: Option<String>,
+    /// The update item is enabled (not while downloading / installing).
+    update_enabled: bool,
     shows_active_icon: bool,
     lang: Lang,
 }
@@ -78,6 +85,7 @@ impl Tray {
         let settings = item(app, ID_SETTINGS, t(Key::Settings), true)?;
         let data = item(app, ID_DATA, t(Key::OpenDataFolder), true)?;
         let quit = item(app, ID_QUIT, t(Key::Quit), true)?;
+        let update = item(app, ID_UPDATE, &fill(t(Key::UpdateTo), &["–"]), true)?;
 
         let tray = Self {
             app: app.clone(),
@@ -97,16 +105,19 @@ impl Tray {
             settings,
             data,
             quit,
+            update,
             shows_live_values: false,
+            shows_update: None,
+            update_enabled: true,
             shows_active_icon: false,
             lang,
         };
         // The menu needs the items above, so it is attached after creation.
-        tray.icon.set_menu(Some(tray.build_menu(false)?))?;
+        tray.icon.set_menu(Some(tray.build_menu(false, false)?))?;
         Ok(tray)
     }
 
-    fn build_menu(&self, live_values: bool) -> tauri::Result<Menu<tauri::Wry>> {
+    fn build_menu(&self, live_values: bool, update: bool) -> tauri::Result<Menu<tauri::Wry>> {
         let menu = Menu::new(&self.app)?;
         menu.append(&self.toggle)?;
         menu.append(&PredefinedMenuItem::separator(&self.app)?)?;
@@ -120,6 +131,9 @@ impl Tray {
         menu.append(&self.settings)?;
         menu.append(&self.data)?;
         menu.append(&PredefinedMenuItem::separator(&self.app)?)?;
+        if update {
+            menu.append(&self.update)?;
+        }
         menu.append(&self.quit)?;
         Ok(menu)
     }
@@ -137,6 +151,8 @@ impl Tray {
         self.settings.set_text(tr(lang, Key::Settings))?;
         self.data.set_text(tr(lang, Key::OpenDataFolder))?;
         self.quit.set_text(tr(lang, Key::Quit))?;
+        // Relabelled by `try_refresh` (it holds the version).
+        self.shows_update = None;
         log::debug!("tray relabelled: {lang:?}");
         self.lang = lang;
         Ok(())
@@ -176,10 +192,24 @@ impl Tray {
             self.energy
                 .set_text(fill(t(Key::Energy), &[&value(energy, format::energy)]))?;
         }
-        if measuring != self.shows_live_values {
-            self.icon.set_menu(Some(self.build_menu(measuring)?))?;
+        // "Update to 0.2.0…" while an update is available.
+        let update = state.update.as_ref().map(|u| u.version.clone());
+        if update != self.shows_update {
+            if let Some(version) = &update {
+                self.update.set_text(fill(t(Key::UpdateTo), &[version]))?;
+            }
+        }
+        let idle = state.updater.phase == UpdatePhase::Idle;
+        if idle != self.update_enabled {
+            self.update.set_enabled(idle)?;
+            self.update_enabled = idle;
+        }
+        if measuring != self.shows_live_values || update.is_some() != self.shows_update.is_some() {
+            self.icon
+                .set_menu(Some(self.build_menu(measuring, update.is_some())?))?;
             self.shows_live_values = measuring;
         }
+        self.shows_update = update;
 
         // Icon.
         if measuring != self.shows_active_icon {
@@ -243,6 +273,9 @@ fn on_menu_event(app: &AppHandle, id: &str) {
             }
         }),
         ID_QUIT => controller::quit(app),
+        // The Dashboard's banner has the Install button (and says that a
+        // running measurement will be stopped).
+        ID_UPDATE => controller::spawn(app, |app| controller::show_panel(app, Some("dashboard"))),
         _ => {}
     }
 }
