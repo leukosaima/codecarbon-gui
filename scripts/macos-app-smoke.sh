@@ -13,7 +13,9 @@ set -euo pipefail
 
 src_app="$1"
 seconds="${2:-20}"
-work="$(mktemp -d)"
+# Real path: $TMPDIR lives under /var, a symlink to /private/var, and Tauri
+# refuses to resolve its sidecar from an executable path with a symlink.
+work="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$work"' EXIT
 
 mkdir -p "$work/Applications"
