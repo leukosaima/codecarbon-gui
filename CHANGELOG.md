@@ -4,6 +4,15 @@ All notable changes to CodeCarbon Desktop. Versions are tagged `vX.Y.Z` and
 published as GitHub pre-releases with installers for Windows, macOS (Apple
 Silicon and Intel) and Linux.
 
+## 0.1.6 — diagnostics and Intel-Mac sign-in
+- When the measurement engine stops unexpectedly, the error banner now
+  includes the engine's own last error line, and the full error output
+  is written to the app log (instead of only "exit code 255").
+- Intel Macs: dashboard sign-in no longer fails with an OpenSSL
+  `ImportError` (the build now uses a prebuilt cryptography wheel).
+- CI and releases start the whole macOS app from the signed DMG on both
+  Apple Silicon and Intel and check that a measurement runs.
+
 ## 0.1.5 — automatic updates (needs the signing key)
 - The app can check GitHub Releases for a new version (shortly after launch,
   then daily; *Settings → Updates*), show it on the Dashboard and in the
