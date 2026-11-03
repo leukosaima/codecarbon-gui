@@ -1,4 +1,5 @@
-//! Human-friendly number formatting for the tray (tooltip, menu, macOS title).
+//! Human-friendly number formatting for the tray (tooltip, menu, macOS title)
+//! and the "measurement stopped" notification.
 //!
 //! The panel uses the same rules, implemented in `src/format.ts`; keep both in
 //! sync (they share the same test cases).
@@ -6,7 +7,7 @@
 //! Numbers stay ASCII (no grouping, plain space before the unit) except the
 //! decimal separator, which follows the language: `23.4 W` / `23,4 W`.
 
-use crate::i18n::Lang;
+use crate::i18n::{fill, tr, Key, Lang};
 
 /// Placeholder shown for values that are not finite numbers.
 const DASH: &str = "–";
@@ -89,6 +90,41 @@ pub fn duration(seconds: f64) -> String {
     format!("{:02}:{:02}:{:02}", s / 3600, (s / 60) % 60, s % 60)
 }
 
+/// A duration in words, like the panel's `durationShort`: `"45 s"`,
+/// `"12 min"`, `"3 h 5 min"`, `"26 h"` (the same in English and French).
+pub fn duration_short(seconds: f64) -> String {
+    if !seconds.is_finite() || seconds < 0.0 {
+        return DASH.to_string();
+    }
+    if seconds < 60.0 {
+        return format!("{} s", seconds.floor());
+    }
+    let minutes = (seconds / 60.0).round() as u64;
+    match (minutes / 60, minutes % 60) {
+        (0, m) => format!("{m} min"),
+        (h, 0) => format!("{h} h"),
+        (h, m) => format!("{h} h {m} min"),
+    }
+}
+
+/// Body of the "measurement stopped" notification:
+/// `"Session: 12 min · 0.04 Wh · 0.003 g CO₂e"`.
+pub fn session_notification(
+    duration_s: f64,
+    energy_kwh: f64,
+    emissions_kg: f64,
+    lang: Lang,
+) -> String {
+    fill(
+        tr(lang, Key::NotifyStopped),
+        &[
+            &duration_short(duration_s),
+            &energy(energy_kwh, lang),
+            &co2(emissions_kg, lang),
+        ],
+    )
+}
+
 /// Grid carbon intensity as an integer: `"56 g/kWh"`.
 pub fn intensity(g_per_kwh: f64) -> String {
     if !g_per_kwh.is_finite() {
@@ -147,6 +183,31 @@ mod tests {
         assert_eq!(duration(61.9), "00:01:01");
         assert_eq!(duration(3600.0 * 25.0 + 5.0), "25:00:05");
         assert_eq!(duration(-1.0), "00:00:00");
+    }
+
+    #[test]
+    fn durations_in_words() {
+        // Same cases as `durationShort` in src/format.test.ts.
+        assert_eq!(duration_short(0.0), "0 s");
+        assert_eq!(duration_short(45.9), "45 s");
+        assert_eq!(duration_short(60.0), "1 min");
+        assert_eq!(duration_short(12.0 * 60.0 + 10.0), "12 min");
+        assert_eq!(duration_short(3.0 * 3600.0 + 5.0 * 60.0), "3 h 5 min");
+        assert_eq!(duration_short(26.0 * 3600.0), "26 h");
+        assert_eq!(duration_short(-1.0), "–");
+        assert_eq!(duration_short(f64::NAN), "–");
+    }
+
+    #[test]
+    fn notification_body() {
+        assert_eq!(
+            session_notification(725.0, 0.00004, 0.000003, En),
+            "Session: 12 min · 0.04 Wh · 0.003 g CO₂e"
+        );
+        assert_eq!(
+            session_notification(725.0, 0.00004, 0.000003, Fr),
+            "Session\u{a0}: 12 min · 0,04 Wh · 0,003 g CO₂e"
+        );
     }
 
     #[test]

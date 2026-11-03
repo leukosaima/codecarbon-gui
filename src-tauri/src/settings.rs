@@ -82,6 +82,11 @@ pub struct Settings {
     pub force_carbon_intensity_g_per_kwh: Option<f64>,
     /// Language of the panel and the tray: `"system"`, `"en"` or `"fr"`.
     pub language: String,
+    /// A native notification with the session's figures when a measurement
+    /// stops (not when the app quits).
+    pub notify_on_stop: bool,
+    /// The user closed the Dashboard's first-run welcome card ("Got it").
+    pub welcome_dismissed: bool,
 }
 
 impl Default for Settings {
@@ -97,6 +102,8 @@ impl Default for Settings {
             pue: None,
             force_carbon_intensity_g_per_kwh: None,
             language: "system".to_string(),
+            notify_on_stop: true,
+            welcome_dismissed: false,
         }
     }
 }
@@ -245,7 +252,24 @@ mod tests {
         assert!(!s.api.enabled);
         assert_eq!(s.api.endpoint, "https://api.codecarbon.io");
         assert_eq!(s.language, "system");
+        assert!(s.notify_on_stop);
+        assert!(!s.welcome_dismissed);
         assert!(s.validate().is_ok());
+    }
+
+    #[test]
+    fn notification_and_welcome_flags() {
+        let old: Settings = serde_json::from_str(r#"{"interval_secs": 5}"#).unwrap();
+        assert!(old.notify_on_stop, "older files notify by default");
+        assert!(!old.welcome_dismissed, "older files have not dismissed it");
+        let s: Settings =
+            serde_json::from_str(r#"{"notify_on_stop": false, "welcome_dismissed": true}"#)
+                .unwrap();
+        assert!(!s.notify_on_stop);
+        assert!(s.welcome_dismissed);
+        let v = serde_json::to_value(s.normalized()).unwrap();
+        assert_eq!(v["notify_on_stop"], false);
+        assert_eq!(v["welcome_dismissed"], true);
     }
 
     #[test]

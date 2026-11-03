@@ -4,6 +4,12 @@ All notable changes to CodeCarbon Desktop. Versions are tagged `vX.Y.Z` and
 published as GitHub pre-releases with installers for Windows, macOS (Apple
 Silicon and Intel) and Linux.
 
+## 0.1.4 — first-run help and notifications
+- Welcome card on first launch explaining the tray, Start/Stop and privacy.
+- Native notification with the session summary when a measurement stops
+  (can be switched off in Settings).
+- Layout fixes at the minimum window width.
+
 ## 0.1.3 — localisation
 - English and French, auto-detected from the system, with a language setting.
 

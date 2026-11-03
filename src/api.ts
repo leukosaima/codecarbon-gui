@@ -184,6 +184,18 @@ export interface Settings {
   force_carbon_intensity_g_per_kwh: number | null;
   /** "system" follows the OS (navigator.languages). */
   language: LanguageSetting;
+  /** Native notification when a measurement stops (not on quit). */
+  notify_on_stop: boolean;
+  /** The Dashboard's first-run card was closed ("Got it"). */
+  welcome_dismissed: boolean;
+}
+
+/** What the Dashboard's first-run welcome card needs (`get_first_run_info`). */
+export interface FirstRunInfo {
+  /** `emissions.csv` holds at least one session. */
+  has_sessions: boolean;
+  /** `std::env::consts::OS`: "linux", "macos" or "windows". */
+  platform: string;
 }
 
 // --- History (emissions.csv, see history.rs) --------------------------------
@@ -264,6 +276,9 @@ export const saveSettings = (settings: Settings): Promise<Settings> =>
 export const openDataFolder = (): Promise<void> => invoke("open_data_folder");
 /** Reads `emissions.csv` on every call. */
 export const getHistory = (): Promise<HistoryPayload> => invoke<HistoryPayload>("get_history");
+/** Cheap: stops reading `emissions.csv` at the first session. */
+export const getFirstRunInfo = (): Promise<FirstRunInfo> =>
+  invoke<FirstRunInfo>("get_first_run_info");
 /** Everyday equivalents of one session (the factors live in Rust). */
 export const getEquivalents = (emissionsKg: number, energyKwh: number): Promise<Equivalent[]> =>
   invoke<Equivalent[]>("get_equivalents", { emissionsKg, energyKwh });

@@ -36,13 +36,28 @@ export const fr: Messages = {
   "dashboard.last_session": "Dernière session",
   "dashboard.average_power": "Puissance moyenne",
   "dashboard.grid_intensity": "Intensité du réseau",
-  "dashboard.average": "moyenne · {breakdown}",
+  "dashboard.average": "moyenne",
   "dashboard.per_hour": "{value} par heure",
   "dashboard.grid": "réseau : {value}",
   "dashboard.cpu_load": "Charge CPU {value} %",
   "dashboard.uploading_to": "Envoi vers {target}",
   "dashboard.uploading_title": "Vos mesures sont envoyées au tableau de bord CodeCarbon.",
   "dashboard.how_measured": "Comment est-ce mesuré ?",
+
+  // --- Carte de bienvenue (premier lancement) --------------------------------
+  "welcome.title": "Bienvenue dans CodeCarbon",
+  "welcome.tray":
+    "CodeCarbon se trouve dans votre barre des menus / zone de notification : " +
+    "fermez cette fenêtre, il continue de fonctionner.",
+  "welcome.start":
+    "Appuyez sur {start} pour voir la puissance et le CO₂e de votre ordinateur. " +
+    "Arrêtez quand vous voulez : chaque session est enregistrée dans l'Historique.",
+  "welcome.privacy":
+    "Rien ne quitte votre ordinateur, sauf si vous connectez un compte du tableau de bord " +
+    "dans les Réglages.",
+  "welcome.gnome":
+    "Sous GNOME, installez l'extension AppIndicator pour voir l'icône de la zone de notification.",
+  "welcome.dismiss": "J'ai compris",
 
   // --- « Comment est-ce mesuré ? » -----------------------------------------
   "details.intro":
@@ -139,6 +154,7 @@ export const fr: Messages = {
   "settings.save_csv_help": "Ajouter chaque session à emissions.csv",
   "settings.start_on_launch": "Mesurer dès le lancement",
   "settings.launch_at_login": "Lancer à l'ouverture de session",
+  "settings.notify_on_stop": "Me prévenir à la fin d'une mesure",
   "settings.pue": "PUE (facultatif)",
   "settings.pue_help": "Efficacité énergétique du centre de données, pour les serveurs.",
   "settings.ci": "Intensité carbone imposée (g/kWh, facultatif)",
