@@ -34,7 +34,7 @@ JSON
 
 log="$work/app.log"
 # Finder starts apps with a minimal environment and cwd "/".
-( cd / && env -i HOME="$HOME" USER="${USER:-runner}" TMPDIR="${TMPDIR:-/tmp}" \
+( cd / && exec env -i HOME="$HOME" USER="${USER:-runner}" TMPDIR="${TMPDIR:-/tmp}" \
     PATH=/usr/bin:/bin:/usr/sbin:/sbin \
     RUST_LOG="info,codecarbon_desktop_lib=debug" \
     "$bin" > "$log" 2>&1 ) &
@@ -69,6 +69,10 @@ check "ready received" "agent ready:"
 check "started received" '← agent: \{"event": ?"started"'
 check "measurements received" '← agent: \{"event": ?"measurement"' 3
 check "stopped on quit" '← agent: \{"event": ?"stopped"'
+if grep -qE "Traceback|ImportError|ModuleNotFoundError" "$log"; then
+  echo "  FAIL  Python error in the sidecar (see log)"
+  failures=$((failures + 1))
+fi
 if grep -q "agent exited unexpectedly" "$log"; then
   echo "  FAIL  agent crashed (see log)"
   failures=$((failures + 1))

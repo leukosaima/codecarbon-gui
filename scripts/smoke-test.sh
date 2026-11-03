@@ -130,6 +130,10 @@ if pgrep -f "$(dirname "$bin")/codecarbon-agent" > /dev/null; then
 else
   echo "  ok    no agent process left behind"
 fi
+if grep -qE "Traceback|ImportError|ModuleNotFoundError" "$log"; then
+  echo "  FAIL  Python error in the sidecar (see log)"
+  failures=$((failures + 1))
+fi
 if grep -qE "panicked|SMOKE: app did not exit" "$log"; then
   echo "  FAIL  panic or hang (see log)"
   failures=$((failures + 1))
