@@ -180,6 +180,15 @@ jobs:
           echo "--- sidecar signature flags and entitlements"
           codesign -dv "$app/Contents/MacOS/codecarbon-agent" 2>&1 | grep -E 'flags' || true
           codesign -d --entitlements - "$app/Contents/MacOS/codecarbon-agent" 2>&1 || true
+          # macOS 26 refuses the engine's bundled Python without this
+          # entitlement (exit code 255 on users' Macs; CI runners do not
+          # enforce library validation, so check the signature itself).
+          for bin in codecarbon-agent codecarbon-desktop; do
+            codesign -d --entitlements - --xml "$app/Contents/MacOS/$bin" 2>/dev/null \
+              | grep -q "com.apple.security.cs.disable-library-validation" \
+              || { echo "::error::$bin is missing disable-library-validation"; exit 1; }
+          done
+          echo "entitlement disable-library-validation present on app and engine"
           # Run the sidecar exactly as the installed app does: the binary
           # inside the signed bundle (hardened runtime, Tauri's signature),
           # not the PyInstaller output that the earlier self-test ran.

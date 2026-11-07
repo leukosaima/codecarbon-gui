@@ -6,9 +6,10 @@
  * Only the weights the design uses (400 body, 500 headings, 700 buttons)
  * and the latin + latin-ext subsets (French accents, "œ", "€").
  *
- * Disket Mono, the "Data" font of the numbers, is not redistributable:
- * a copy installed on the computer is used, else IBM Plex Mono Medium
- * (see --cc-font-data in styles.css).
+ * Disket Mono, the "Data" font of the numbers, may not be redistributed
+ * (its EULA, clause d): it is used from public/fonts/disket-mono/ when a
+ * developer puts the files there (git-ignored), else from an installed
+ * copy, else IBM Plex Mono Medium (see --cc-font-data in styles.css).
  */
 
 @font-face {
@@ -65,9 +66,34 @@
   unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
 }
 
+/* Files in public/fonts/disket-mono/ are optional and git-ignored (EULA:
+ * no redistribution, see the README there). A missing file just falls
+ * back to an installed copy, then to IBM Plex Mono.
+ *
+ * "CC Data" is Disket Mono for digits and number punctuation only: the
+ * font has no lowercase (its "g" is a capital G, which would read as
+ * "giga"), so the letters of units ("g", "Wh", "km") fall through to
+ * IBM Plex Mono via unicode-range. */
 @font-face {
-  font-family: "Disket Mono";
+  font-family: "CC Data";
   font-style: normal;
-  font-weight: 400 700;
-  src: local("Disket Mono"), local("DisketMono-Regular");
+  font-display: swap;
+  font-weight: 400;
+  src:
+    local("Disket Mono"),
+    local("DisketMono-Regular"),
+    url("/fonts/disket-mono/DisketMono-Regular.ttf") format("truetype");
+  unicode-range: U+0020, U+0025, U+002B-002E, U+0030-003A, U+00A0, U+2248;
+}
+
+@font-face {
+  font-family: "CC Data";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src:
+    local("Disket Mono Bold"),
+    local("DisketMono-Bold"),
+    url("/fonts/disket-mono/DisketMono-Bold.ttf") format("truetype");
+  unicode-range: U+0020, U+0025, U+002B-002E, U+0030-003A, U+00A0, U+2248;
 }

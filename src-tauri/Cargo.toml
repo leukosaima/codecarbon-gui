@@ -1,6 +1,6 @@
 [package]
 name = "codecarbon-desktop"
-version = "0.1.7"
+version = "0.1.8"
 description = "Tray / menu-bar app that measures your computer's power and CO2 emissions with CodeCarbon"
 authors = ["CodeCarbon contributors"]
 license = "MIT"
