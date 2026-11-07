@@ -35,7 +35,7 @@
 
   /* Type: IBM Plex Mono for everything, Disket Mono ("Data") for numbers. */
   --cc-font: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-  --cc-font-data: "Disket Mono", "IBM Plex Mono", ui-monospace, monospace;
+  --cc-font-data: "CC Data", "IBM Plex Mono", ui-monospace, monospace;
 
   /* The brand is sharp: 2 px for buttons, inputs and tiles, 4 px for alerts. */
   --cc-radius: 2px;

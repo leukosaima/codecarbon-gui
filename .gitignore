@@ -24,3 +24,9 @@ Thumbs.db
 .idea/
 .vscode/
 *.log
+
+# Disket Mono (Mariano Diez / Rostype): its EULA forbids redistributing the
+# font, so the files are never committed. Drop DisketMono-Regular.ttf,
+# DisketMono-Bold.ttf and Disket-mono_EULA.pdf here for local builds.
+public/fonts/disket-mono/*
+!public/fonts/disket-mono/README.md
