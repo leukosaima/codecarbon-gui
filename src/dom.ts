@@ -1,4 +1,5 @@
 /** Tiny DOM helpers (no framework). Text is always set with textContent. */
+import { splitUnit } from "./format";
 
 type Child = Node | string | null | undefined | false;
 type Attrs = Record<string, string | number | boolean | null | undefined>;
@@ -37,6 +38,17 @@ export function svg<K extends keyof SVGElementTagNameMap>(
 /** Set text only when it changed (avoids needless layout work). */
 export function setText(el: Element, text: string): void {
   if (el.textContent !== text) el.textContent = text;
+}
+
+/**
+ * A KPI ("23.4 W"): the number as text, the unit in a `.tile-unit` span
+ * (styled apart). The element's text stays the whole quantity.
+ */
+export function setQuantity(el: Element, text: string): void {
+  if (el.textContent === text) return;
+  const [value, unit] = splitUnit(text);
+  el.replaceChildren(value);
+  if (unit) el.append(h("span", { class: "tile-unit" }, unit));
 }
 
 /** Show or hide an element with the `hidden` attribute. */

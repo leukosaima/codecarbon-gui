@@ -1,7 +1,7 @@
 {
   "name": "codecarbon-desktop",
   "private": true,
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Tray / menu-bar app that measures your computer's power and CO2 emissions with CodeCarbon",
   "license": "MIT",
   "type": "module",
@@ -14,6 +14,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
     "@tauri-apps/api": "^2.12.4"
   },
   "devDependencies": {

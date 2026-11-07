@@ -18,10 +18,11 @@ import {
   type TrackerState,
 } from "../api";
 import { uploadChip } from "../account";
-import { h, setText, show, spinner, svg } from "../dom";
+import { equivalentIcon } from "../brand";
+import { h, setQuantity, setText, show, spinner, svg } from "../dom";
 import * as fmt from "../format";
 import { cpuMethod, statusLine } from "../format";
-import { best, describe as describeEquivalent } from "../equivalents";
+import { best, describe as describeEquivalent, numberParts } from "../equivalents";
 import { getLocale, live, liveAttr, n, t, tNodes, type Locale, type MessageKey } from "../i18n/i18n";
 import { sparkline, WINDOW_SECS } from "../sparkline";
 import { updateBanner } from "../update";
@@ -60,7 +61,7 @@ export class DashboardView {
   private readonly updateNote = h("small", { class: "update-note" });
   private readonly updateInstall = h(
     "button",
-    { class: "btn btn-small", type: "button" },
+    { class: "btn btn-small btn-primary", type: "button" },
     live("update.install"),
   );
   private readonly updateCard = h(
@@ -162,7 +163,7 @@ export class DashboardView {
 
     const dismiss = h(
       "button",
-      { class: "btn btn-small", type: "button" },
+      { class: "btn btn-small btn-primary", type: "button" },
       live("welcome.dismiss"),
     );
     dismiss.addEventListener("click", () => void this.dismissWelcome());
@@ -322,7 +323,7 @@ export class DashboardView {
     const emissions = summary ? summary.emissions_kg : m?.emissions_kg;
     const energy = summary ? summary.energy_kwh.total : m?.energy_kwh.total;
     const rate = summary ? summary.emissions_rate_kg_s : m?.emissions_rate_kg_s;
-    setText(this.power.value, power ? fmt.power(power.total) : "–");
+    setQuantity(this.power.value, power ? fmt.power(power.total) : "–");
     if (power) {
       // Components that are 0 (e.g. no GPU) are left out.
       const parts: [string, number][] = [
@@ -337,8 +338,8 @@ export class DashboardView {
     } else {
       this.renderBreakdown([]);
     }
-    setText(this.co2.value, emissions !== undefined ? fmt.co2(emissions) : "–");
-    setText(this.energy.value, energy !== undefined ? fmt.energy(energy) : "–");
+    setQuantity(this.co2.value, emissions !== undefined ? fmt.co2(emissions) : "–");
+    setQuantity(this.energy.value, energy !== undefined ? fmt.energy(energy) : "–");
     setText(this.co2.sub, rate ? t("dashboard.per_hour", { value: fmt.co2(rate * 3600) }) : "");
     const ci =
       summary?.carbon_intensity_g_per_kwh ??
@@ -367,7 +368,14 @@ export class DashboardView {
 
     // Status line.
     const line = statusLine(state.hardware, state.location, m?.carbon_intensity_g_per_kwh ?? null);
-    setText(this.status, line);
+    if (this.status.textContent !== line) {
+      // One unbreakable part per item: the line wraps between them only.
+      this.status.replaceChildren(
+        ...line
+          .split(" · ")
+          .flatMap((part, i) => [i > 0 ? " · " : "", h("span", { class: "status-part" }, part)]),
+      );
+    }
     show(this.status, line !== "");
 
     // Last session summary.
@@ -439,8 +447,15 @@ export class DashboardView {
   }
 
   private showEquivalent(): void {
-    const text = this.equivalent ? describeEquivalent(this.equivalent) : null;
-    setText(this.summaryEquivalent, text ?? "");
+    const eq = this.equivalent;
+    const text = eq ? describeEquivalent(eq) : null;
+    if (eq && text !== null && this.summaryEquivalent.textContent !== text) {
+      const [before, value, after] = numberParts(text);
+      this.summaryEquivalent.replaceChildren(
+        equivalentIcon(eq.key),
+        h("span", {}, before, h("span", { class: "eq-value" }, value), after),
+      );
+    }
     show(this.summaryEquivalent, text !== null);
   }
 
