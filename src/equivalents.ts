@@ -57,3 +57,14 @@ export const ICONS: Record<string, string> = {
   // A play button.
   streaming_hours: "M10 17.5a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Z M8.5 7v6l5-3z",
 };
+
+/**
+ * "≈ 12.3 km by car" → ["≈ ", "12.3", " km by car"]: the first number of
+ * an equivalent's sentence, drawn larger in the panel. Any language: the
+ * numbers are not grouped. No number → [text, "", ""].
+ */
+export function numberParts(text: string): [string, string, string] {
+  const match = /\d+(?:[.,]\d+)?/.exec(text);
+  if (!match) return [text, "", ""];
+  return [text.slice(0, match.index), match[0], text.slice(match.index + match[0].length)];
+}

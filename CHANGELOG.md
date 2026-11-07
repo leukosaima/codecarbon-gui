@@ -4,6 +4,16 @@ All notable changes to CodeCarbon Desktop. Versions are tagged `vX.Y.Z` and
 published as GitHub pre-releases with installers for Windows, macOS (Apple
 Silicon and Intel) and Linux.
 
+## 0.1.7 — CodeCarbon design system
+- The panel follows the CodeCarbon design system (Figma "Code Carbon -
+  Master"): dark brand header with the logo, IBM Plex Mono throughout
+  (bundled, works offline), lime primary and outline buttons, brand
+  inputs, alerts, list rows and KPI tiles, lime charts, and the brand's
+  pixel icons for the everyday equivalents. Light mode follows the
+  design system's light schemes.
+- A few colours are slightly darker or lighter than in Figma so that text
+  meets WCAG AA contrast (see docs/DESIGN.md).
+
 ## 0.1.6 — diagnostics and Intel-Mac sign-in
 - When the measurement engine stops unexpectedly, the error banner now
   includes the engine's own last error line, and the full error output

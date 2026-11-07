@@ -1,6 +1,6 @@
 import { afterEach, describe as suite, expect, it } from "vitest";
 import type { Equivalent } from "./api";
-import { best, describe, ICONS } from "./equivalents";
+import { best, describe, ICONS, numberParts } from "./equivalents";
 import { setLocale } from "./i18n/i18n";
 
 const eq = (key: string, value: number): Equivalent => ({ key, value, unit: "" });
@@ -70,5 +70,14 @@ suite("best", () => {
     expect(best([])).toBeNull();
     expect(best([eq("car_km", 0), eq("led_tv_hours", 0)])).toBeNull();
     expect(best([eq("other", 5)])).toBeNull();
+  });
+});
+
+suite("numberParts", () => {
+  it("finds the number of the sentence", () => {
+    expect(numberParts("≈ 12.3 km by car")).toEqual(["≈ ", "12.3", " km by car"]);
+    expect(numberParts("≈\u00a014\u00a0% d'une charge")).toEqual(["≈\u00a0", "14", "\u00a0% d'une charge"]);
+    expect(numberParts("≈ 2,5 heures")).toEqual(["≈ ", "2,5", " heures"]);
+    expect(numberParts("no number")).toEqual(["no number", "", ""]);
   });
 });

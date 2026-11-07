@@ -1,11 +1,12 @@
 /**
- * Panel entry point: a tab bar and four views. Every render comes from the
+ * Panel entry point: the brand header (logo + tabs) and four views. Every render comes from the
  * `TrackerState` pushed by Rust on `tracker://state`.
  *
  * Language: `navigator.languages` until Rust sends the OS's languages and
  * the settings, then `settings.language`. A change re-renders every view
  * (`locale-changed`).
  */
+import "./fonts.css";
 import "./styles.css";
 import {
   getSettings,
@@ -19,6 +20,7 @@ import {
   type TrackerState,
   type View,
 } from "./api";
+import { LOGO_URL } from "./brand";
 import { h } from "./dom";
 import {
   detectLocale,
@@ -66,7 +68,18 @@ const main = h(
   settings.root,
   about.root,
 );
-document.querySelector("#app")?.append(nav, main);
+// The CodeCarbon header (UI Kit Website "Header"): logo, then the tabs.
+const header = h(
+  "header",
+  { class: "app-header" },
+  h(
+    "div",
+    { class: "brand" },
+    h("img", { class: "brand-logo", src: LOGO_URL, alt: "CodeCarbon", width: 91, height: 52 }),
+  ),
+  nav,
+);
+document.querySelector("#app")?.append(header, main);
 
 function select(view: View): void {
   for (const [name, { root }] of Object.entries(views) as [View, { root: HTMLElement }][]) {

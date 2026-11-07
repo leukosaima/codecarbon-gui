@@ -10,6 +10,7 @@ import {
   formatDate,
   formatDay,
   formatTick,
+  splitUnit,
   intensity,
   parseLocal,
   power,
@@ -215,5 +216,20 @@ describe("French", () => {
     expect(round3(1.0004)).toBe(1);
     expect(round3(2.456)).toBe(2.46);
     expect(round3(Number.NaN)).toBe(0);
+  });
+});
+
+describe("splitUnit", () => {
+  it("separates the unit from the number, in both languages", () => {
+    expect(splitUnit("23.4 W")).toEqual(["23.4", " W"]);
+    expect(splitUnit(`0,00431${NB}g`)).toEqual(["0,00431", `${NB}g`]);
+    expect(splitUnit("56 g/kWh")).toEqual(["56", " g/kWh"]);
+    expect(splitUnit("1.2 kWh")).toEqual(["1.2", " kWh"]);
+  });
+
+  it("leaves text without a unit alone", () => {
+    expect(splitUnit("00:00:11")).toEqual(["00:00:11", ""]);
+    expect(splitUnit("–")).toEqual(["–", ""]);
+    expect(splitUnit("")).toEqual(["", ""]);
   });
 });
