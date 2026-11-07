@@ -111,8 +111,9 @@ contributors can follow the Rust and TS parts.
 ### 3.3 Panel (WebView)
 
 A single ~400 × 600 px window, hidden instead of closed, positioned next to the
-tray icon when opened from it. Four views, switched by a top tab bar
-(the tray's `app://navigate` event can also select one):
+tray icon when opened from it. Four views, switched by the tabs of the
+brand header under the CodeCarbon logo (the tray's `app://navigate` event
+can also select one):
 
 * **Dashboard** — big Start/Stop button; live tiles for Power (with CPU/GPU/RAM
   breakdown), CO₂e, Energy, Duration; a sparkline of the last 5 minutes of
@@ -146,9 +147,9 @@ tray icon when opened from it. Four views, switched by a top tab bar
 * **About** — versions (app, agent, CodeCarbon), **Check for updates**
   (§3.3c), links, licence.
 
-Light and dark themes follow the OS. No framework: `src/main.ts` + small
-modules (`api.ts`, `format.ts`, `equivalents.ts`, `barchart.ts`, `i18n/`,
-`views/*.ts`).
+Light and dark schemes follow the OS (§3.3d). No framework: `src/main.ts` +
+small modules (`api.ts`, `format.ts`, `equivalents.ts`, `barchart.ts`,
+`brand.ts`, `i18n/`, `views/*.ts`).
 
 ### 3.3b First run and notifications
 
@@ -199,6 +200,45 @@ signing key exists (docs/DEVELOPMENT.md, "Enabling automatic updates").
   the error.
 * The panel only calls `check_for_updates` / `install_update`; it has no
   updater permission (capabilities/default.json is unchanged).
+
+### 3.3d Visual design
+
+The panel follows the CodeCarbon design system, Figma file **"Code Carbon -
+Master"** (pages "Logo & colors", "Font styles", "UI Kit Website", "UI Kit
+Platform", "Project I - Detailed view"). All of it is in `src/styles.css`
+as `--cc-*` custom properties; the views only use classes.
+
+* **Colours.** Dark is the brand's primary scheme (the web dashboard's):
+  background `--cc-bg` #181818, raised rows `--cc-surface` #2B2B2B,
+  dividers `--cc-border` #464646, highlights `--cc-lime` #BFFB4F (hover
+  `--cc-lime-hover` #A0C55B), text `--cc-text` #FFFFFF, secondary text
+  `--cc-text-2` #949494, disabled `--cc-disabled` #949494, typed text
+  #D4D4D4. The light scheme (when the OS is light) is white with #D4D4D4
+  inputs and dividers, black text and #666666 secondary text; lime is then
+  only a fill (buttons, bars, the icons' dark slots), never text. The
+  header (logo + tabs, 4 px #A0C55B bottom border) is dark in both.
+* **Alerts** (`--cc-alert-*`, radius 4 px, bold, drop shadow): success
+  #A0C55B / border #BFFB4F (update banner), warning #D4D068 (notices),
+  error (error banner) with white text and border.
+* **Type.** IBM Plex Mono for everything (400 body, 500 headings, 700
+  buttons), bundled from `@fontsource/ibm-plex-mono` (OFL-1.1; latin and
+  latin-ext only, `src/fonts.css`): the panel is offline and its CSP is
+  `'self'`. Numbers (KPI tiles, session totals, equivalents) use the "Data"
+  font `--cc-font-data`: Disket Mono if it is installed on the computer
+  (it is not redistributable, so not bundled), else IBM Plex Mono Medium.
+  Section titles are uppercase Medium 13 px with a small lime square (the
+  brand's overline).
+* **Shapes.** Radius `--cc-radius` 2 px (buttons, inputs, tiles, cards),
+  `--cc-radius-alert` 4 px; flat 1 px borders, no soft shadows. Buttons:
+  `.btn-primary` lime fill (Start, Sign in, Save, Got it, Install), `.btn`
+  lime outline (Stop, Retry, Cancel, Show more, Check for updates).
+* **Pictures** (`src/assets/brand/`, from Figma, via `src/brand.ts`): the
+  logo (91 × 52) and the lime pixel icons of the equivalents (truck for km
+  by car, TV for LED TV, house for the empty History).
+* Departures, for WCAG AA: secondary text is #949494 on dark (Figma's
+  #666666 is 3.1:1 on #181818), the error alert's fill is #9A5F4D instead
+  of #B27663 (white text 5.1:1 instead of 3.7:1), placeholders are #808080
+  (dark) / #595959 (light).
 
 ### 3.4 Data & privacy
 

@@ -1,51 +1,115 @@
-/* CodeCarbon panel. Light/dark follow the OS; no framework. */
+/*
+ * CodeCarbon panel, in the CodeCarbon design system (Figma "Code Carbon -
+ * Master": "Logo & colors", "Font styles", "UI Kit Website", "UI Kit
+ * Platform"). Dark is the brand's primary scheme; the light scheme of the
+ * same palette follows the OS. No framework. See docs/DESIGN.md, "Visual
+ * design".
+ */
+
+/* ---- Tokens ------------------------------------------------------------- */
 
 :root {
-  --accent: #2e7d32;
-  --accent-strong: #1b5e20;
-  --accent-soft: rgba(46, 125, 50, 0.12);
-  --danger: #c62828;
-  --danger-soft: rgba(198, 40, 40, 0.1);
-  --bg: #f6f7f6;
-  --surface: #ffffff;
-  --text: #1c1f1d;
-  --muted: #5f6763;
-  --border: #dde2de;
-  --radius: 12px;
-  --gutter: 16px;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  /* Brand palette (fixed values; the scheme tokens below pick from it). */
+  --cc-ink: #181818; /* background of the dark scheme, text on lime */
+  --cc-darkest-gray: #2b2b2b;
+  --cc-dark-gray: #464646;
+  --cc-gray: #666666;
+  --cc-disabled: #949494;
+  --cc-light-gray: #d4d4d4;
+  --cc-lime: #bffb4f;
+  --cc-lime-hover: #a0c55b;
+  --cc-white: #ffffff;
+
+  /* Alerts (UI Kit Platform "Alert"). The error fill is darkened from
+     #B27663 so its white text passes WCAG AA (5.1:1 instead of 3.7:1). */
+  --cc-alert-success-bg: #a0c55b;
+  --cc-alert-success-border: #bffb4f;
+  --cc-alert-success-text: #181818;
+  --cc-alert-warning-bg: #d4d068;
+  --cc-alert-warning-border: #bffb4f;
+  --cc-alert-warning-text: #181818;
+  --cc-alert-error-bg: #9a5f4d;
+  --cc-alert-error-border: #ffffff;
+  --cc-alert-error-text: #ffffff;
+  --cc-alert-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+
+  /* Type: IBM Plex Mono for everything, Disket Mono ("Data") for numbers. */
+  --cc-font: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --cc-font-data: "Disket Mono", "IBM Plex Mono", ui-monospace, monospace;
+
+  /* The brand is sharp: 2 px for buttons, inputs and tiles, 4 px for alerts. */
+  --cc-radius: 2px;
+  --cc-radius-alert: 4px;
+  --cc-gutter: 16px;
+
+  /* Light scheme: white page, #D4D4D4 raised blocks, black text; lime is
+     only a fill (buttons, bars, highlight blocks), never text. */
+  --cc-bg: #ffffff;
+  --cc-surface: #f2f2f2; /* row hover */
+  --cc-border: #d4d4d4;
+  --cc-text: #000000;
+  --cc-text-2: #666666; /* secondary text, 5.7:1 on white */
+  --cc-accent-text: #000000; /* lime text in the dark scheme */
+  --cc-kpi: #000000;
+  --cc-marker: #a0c55b;
+  --cc-danger-text: #8e5644;
+  --cc-input-bg: #d4d4d4;
+  --cc-input-bg-hover: #c9c9c9;
+  --cc-input-border-focus: #181818;
+  --cc-input-text: #000000;
+  --cc-input-disabled-bg: #e9e9e9;
+  --cc-placeholder: #595959;
+  --cc-focus: #181818;
+  --cc-switch-off: #949494;
+  --cc-secondary-border: #181818;
+  --cc-secondary-text: #181818;
+  --cc-chart-line: #181818;
+  --cc-chart-area: rgba(191, 251, 79, 0.55);
+  --cc-chart-axis: #949494;
+  --cc-chart-label: #666666;
+  --cc-bar: #a0c55b;
+  --cc-bar-today: #bffb4f;
+  --cc-icon-slot: #181818;
+  --cc-select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0h2v2h2v2h2V2h2V0h2v2H8v2H6v2H4V4H2V2H0z' fill='%23181818'/%3E%3C/svg%3E");
+
   color-scheme: light dark;
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    Ubuntu,
-    Cantarell,
-    "Noto Sans",
-    "Helvetica Neue",
-    Arial,
-    sans-serif;
+  font-family: var(--cc-font);
   font-size: 14px;
-  line-height: 1.45;
-  color: var(--text);
-  background: var(--bg);
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--cc-text);
+  background: var(--cc-bg);
   -webkit-font-smoothing: antialiased;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --accent: #66bb6a;
-    --accent-strong: #81c784;
-    --accent-soft: rgba(102, 187, 106, 0.16);
-    --danger: #ef5350;
-    --danger-soft: rgba(239, 83, 80, 0.14);
-    --bg: #161917;
-    --surface: #202421;
-    --text: #e8ebe9;
-    --muted: #9aa39e;
-    --border: #323833;
-    --shadow: none;
+    --cc-bg: #181818;
+    --cc-surface: #2b2b2b;
+    --cc-border: #464646;
+    --cc-text: #ffffff;
+    /* Figma's #666666 is 3.1:1 on #181818; #949494 (5.9:1) for text. */
+    --cc-text-2: #949494;
+    --cc-accent-text: #bffb4f;
+    --cc-kpi: #bffb4f;
+    --cc-marker: #bffb4f;
+    --cc-danger-text: #c98b78;
+    --cc-input-bg: rgba(255, 255, 255, 0.05);
+    --cc-input-bg-hover: rgba(255, 255, 255, 0.1);
+    --cc-input-border-focus: #bffb4f;
+    --cc-input-text: #d4d4d4;
+    --cc-input-disabled-bg: rgba(255, 255, 255, 0.12);
+    --cc-placeholder: #808080;
+    --cc-focus: #bffb4f;
+    --cc-switch-off: #464646;
+    --cc-secondary-border: #bffb4f;
+    --cc-secondary-text: #bffb4f;
+    --cc-chart-line: #bffb4f;
+    --cc-chart-area: rgba(191, 251, 79, 0.15);
+    --cc-chart-axis: #666666;
+    --cc-chart-label: #949494;
+    --cc-icon-slot: transparent;
+    --cc-select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0h2v2h2v2h2V2h2V0h2v2H8v2H6v2H4V4H2V2H0z' fill='%23bffb4f'/%3E%3C/svg%3E");
   }
 }
 
@@ -57,7 +121,11 @@ html,
 body {
   margin: 0;
   height: 100%;
-  background: var(--bg);
+  background: var(--cc-bg);
+}
+
+body {
+  font: inherit;
 }
 
 #app {
@@ -70,70 +138,127 @@ body {
   display: none !important;
 }
 
-/* ---- Tabs --------------------------------------------------------------- */
+b,
+strong {
+  font-weight: 700;
+}
+
+::selection {
+  background: var(--cc-lime);
+  color: var(--cc-ink);
+}
+
+/* Thin, flat scrollbars (WebKitGTK and WebView2). */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--cc-border);
+  border-radius: var(--cc-radius);
+}
+
+/* ---- Header: logo + tabs (UI Kit Website "Header") ------------------------
+   Always dark, in both schemes: it is the brand's header and keeps the lime
+   logo legible. */
+
+.app-header {
+  flex: none;
+  background: var(--cc-ink);
+  border-bottom: 4px solid var(--cc-lime-hover);
+  color: var(--cc-white);
+  color-scheme: dark;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  padding: 10px var(--cc-gutter) 2px;
+}
+
+.brand-logo {
+  display: block;
+  flex: none;
+}
 
 .tabs {
   display: flex;
   gap: 4px;
-  padding: 10px var(--gutter) 0;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  flex: none;
+  padding: 0 calc(var(--cc-gutter) - 8px);
 }
 
 .tab {
   appearance: none;
   border: 0;
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-weight: 500;
-  padding: 8px 10px 10px;
   border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--cc-lime-hover);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  padding: 8px 8px 7px;
+  margin-bottom: 2px;
   cursor: pointer;
-}
-
-.tab:hover {
-  color: var(--text);
-}
-
-.tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-
-/* Tab names never wrap; on a narrow panel (French labels are longer) the
-   tabs get closer instead. */
-.tab {
+  /* Tab names never wrap; on a narrow panel (French labels are longer)
+     they get smaller instead. */
   white-space: nowrap;
   flex: 0 1 auto;
   min-width: 0;
 }
 
+.tab:hover {
+  color: var(--cc-lime);
+}
+
+.tab.active {
+  color: var(--cc-white);
+  border-bottom-color: var(--cc-lime);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--cc-lime);
+  outline-offset: -2px;
+}
+
 @media (max-width: 380px) {
+  .brand {
+    padding-inline: 12px;
+  }
+
   .tabs {
     gap: 0;
-    padding-inline: 8px;
+    padding-inline: 4px;
   }
 
   .tab {
+    font-size: 13px;
+    letter-spacing: -0.02em;
     padding-inline: 8px;
+  }
+
+  .content {
+    padding-inline: 12px;
   }
 
   /* "0,00286 g" fits a 340 px panel (the power breakdown wraps, below). */
   .tiles:not(.tiles-3) .tile {
-    padding-inline: 12px;
+    padding-inline: 10px;
   }
 
   .tiles:not(.tiles-3) .tile-value {
-    font-size: 23px;
+    font-size: 21px;
   }
 }
 
 .content {
   flex: 1;
   overflow-y: auto;
-  padding: var(--gutter);
+  padding: var(--cc-gutter);
 }
 
 .view {
@@ -142,7 +267,8 @@ body {
   gap: 12px;
 }
 
-/* ---- Buttons ------------------------------------------------------------ */
+/* ---- Buttons (Btn_primary / Btn_secondary) -------------------------------
+   `.btn` is the secondary button (outline); `.btn-primary` the lime one. */
 
 .btn {
   appearance: none;
@@ -150,75 +276,126 @@ body {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--text);
+  border: 1px solid var(--cc-secondary-border);
+  border-radius: var(--cc-radius);
+  background: transparent;
+  color: var(--cc-secondary-text);
   font: inherit;
-  font-weight: 600;
-  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  padding: 7px 20px;
   cursor: pointer;
   transition:
     background 0.15s,
-    opacity 0.15s;
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.btn:not(:disabled):hover {
+  border-color: var(--cc-lime-hover);
+  color: var(--cc-lime-hover);
 }
 
 .btn:disabled {
-  opacity: 0.55;
+  border-color: var(--cc-disabled);
+  color: var(--cc-disabled);
   cursor: default;
 }
 
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-@media (prefers-color-scheme: dark) {
-  .btn-primary {
-    color: #0d1f0e;
-  }
+  background: var(--cc-lime);
+  border-color: var(--cc-lime);
+  color: var(--cc-ink);
 }
 
 .btn-primary:not(:disabled):hover {
-  background: var(--accent-strong);
+  background: var(--cc-lime-hover);
+  border-color: var(--cc-lime-hover);
+  color: var(--cc-ink);
 }
 
+.btn-primary:disabled {
+  background: var(--cc-disabled);
+  border-color: var(--cc-disabled);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Start / Stop: size L. */
 .btn-big {
   width: 100%;
-  padding: 14px;
+  padding: 11px 24px;
   font-size: 16px;
-  border-radius: var(--radius);
 }
 
+/* "Stop measuring" is the secondary (outline) button: distinct from Start,
+   not alarming. */
 .btn-stop {
-  background: var(--surface);
-  border-color: var(--danger);
-  color: var(--danger);
+  background: transparent;
+  border-color: var(--cc-secondary-border);
+  color: var(--cc-secondary-text);
 }
 
 .btn-stop:not(:disabled):hover {
-  background: var(--danger-soft);
+  background: transparent;
+  border-color: var(--cc-lime-hover);
+  color: var(--cc-lime-hover);
 }
 
 .btn-small {
-  padding: 4px 10px;
+  padding: 5px 14px;
   font-size: 13px;
 }
 
+@media not all and (prefers-color-scheme: dark) {
+  /* No lime text on white: the outline button is black, lime on hover. */
+  .btn:not(.btn-primary):not(:disabled):hover {
+    background: var(--cc-lime);
+    border-color: var(--cc-ink);
+    color: var(--cc-ink);
+  }
+}
+
+/* Inline links (Header menu title style). */
 .link {
   appearance: none;
   background: none;
   border: 0;
   padding: 0;
   font: inherit;
-  color: var(--accent);
+  color: var(--cc-accent-text);
   cursor: pointer;
   text-decoration: none;
 }
 
 .link:hover {
+  color: var(--cc-lime-hover);
   text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.link:disabled {
+  color: var(--cc-text-2);
+  cursor: default;
+  text-decoration: none;
+}
+
+@media not all and (prefers-color-scheme: dark) {
+  .link {
+    text-decoration: underline;
+    text-decoration-color: var(--cc-lime-hover);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+  }
+
+  .link:hover {
+    color: var(--cc-text);
+    text-decoration-color: var(--cc-ink);
+  }
+
+  .link:disabled {
+    text-decoration: none;
+  }
 }
 
 .spinner {
@@ -228,6 +405,7 @@ body {
   border-right-color: transparent;
   border-radius: 50%;
   display: inline-block;
+  flex: none;
   animation: spin 0.8s linear infinite;
 }
 
@@ -240,26 +418,49 @@ body {
 /* ---- Cards & tiles ------------------------------------------------------ */
 
 .card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  background: var(--cc-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius);
   padding: 12px 14px;
-  box-shadow: var(--shadow);
   margin: 0;
   min-width: 0;
 }
 
+/* Card / section titles: uppercase Medium with a lime "pixel" (the brand's
+   overline). */
 .card-head {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  font-weight: 600;
-  margin-bottom: 6px;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.card-head > :first-child,
+.card-title,
+.welcome-title,
+.details > summary {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.card-head > :first-child::before,
+.card-title::before,
+.welcome-title::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 8px;
+  vertical-align: 0.15em;
+  background: var(--cc-marker);
 }
 
 .card-head .muted,
 .card-head .link {
-  font-weight: 400;
   font-size: 12px;
 }
 
@@ -269,31 +470,58 @@ body {
   gap: 10px;
 }
 
+/* KPI tile (Project I - Detailed view): the number in the Data font, its
+   caption under it. */
 .tile {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 14px;
-  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  background: var(--cc-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius);
+  padding: 12px 14px 10px;
   min-width: 0;
 }
 
+/* Measuring: a lime bar on top of the live tiles. */
 .tile-live {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-color: var(--cc-lime-hover);
+  box-shadow: inset 0 3px 0 var(--cc-lime);
 }
 
+.tile-value {
+  order: -1;
+  font-family: var(--cc-font-data);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--cc-kpi);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* "W", "g", "Wh": the unit of a KPI is in the text colour. */
+.tile-unit {
+  color: var(--cc-text);
+  font-size: 0.66em;
+  letter-spacing: 0;
+}
+
+/* Not uppercase: "CO₂e" must keep its small "e". */
 .tile-label {
-  color: var(--muted);
+  margin-top: 2px;
+  color: var(--cc-text);
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.02em;
 }
 
-.tile-value {
-  font-size: 26px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
+.tile-sub {
+  color: var(--cc-text-2);
+  font-size: 11.5px;
+  min-height: 1.4em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -323,66 +551,79 @@ body {
   text-align: center;
 }
 
-.tile-live .tile-value {
-  color: var(--accent);
-}
-
-.tile-sub {
-  color: var(--muted);
-  font-size: 11.5px;
-  min-height: 1.4em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* ---- Charts ------------------------------------------------------------- */
 
 .spark {
   display: block;
   width: 100%;
   height: 64px;
+  border-bottom: 1px solid var(--cc-chart-axis);
 }
 
 .spark-line {
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--cc-chart-line);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
-  stroke-linejoin: round;
+  stroke-linejoin: miter;
 }
 
 .spark-area {
-  fill: var(--accent-soft);
+  fill: var(--cc-chart-area);
   stroke: none;
 }
 
 .status-line {
   margin: 0;
-  color: var(--muted);
-  font-size: 12px;
+  color: var(--cc-text-2);
+  font-size: 11.5px;
   text-align: center;
+  text-wrap: balance;
 }
+
+.status-part {
+  white-space: nowrap;
+}
+
+/* ---- Last session -------------------------------------------------------- */
 
 .summary-grid {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 4px 16px;
+  gap: 6px 16px;
   margin: 0;
 }
 
 .summary-grid dt {
-  color: var(--muted);
+  color: var(--cc-text-2);
 }
 
 .summary-grid dd {
   margin: 0;
   text-align: right;
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: 500;
   overflow-wrap: anywhere;
 }
 
 .summary {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-color: var(--cc-lime-hover);
+}
+
+.summary .summary-grid dd {
+  font-family: var(--cc-font-data);
+  color: var(--cc-kpi);
+}
+
+.summary-equivalent {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--cc-border);
+  font-weight: 500;
 }
 
 /* ---- First-run welcome card ------------------------------------------- */
@@ -390,18 +631,20 @@ body {
 .welcome {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   font-size: 13px;
 }
 
 .welcome-title {
   margin: 0 0 2px;
-  font-size: 15px;
-  font-weight: 600;
 }
 
 .welcome p {
   margin: 0;
+}
+
+.welcome b {
+  color: var(--cc-accent-text);
 }
 
 .welcome-actions {
@@ -410,31 +653,51 @@ body {
   margin-top: 4px;
 }
 
-/* ---- Banners & hints ---------------------------------------------------- */
+/* ---- Alerts, banners & hints (UI Kit Platform "Alert") ------------------- */
 
-.banner {
+.banner,
+.update-banner,
+.notice {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 12px;
-  border-radius: var(--radius);
-  background: var(--danger-soft);
-  color: var(--danger);
-  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  padding: 12px 16px;
+  border-radius: var(--cc-radius-alert);
+  box-shadow: var(--cc-alert-shadow);
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.banner {
+  background: var(--cc-alert-error-bg);
+  border: 1px solid var(--cc-alert-error-border);
+  color: var(--cc-alert-error-text);
+}
+
+.banner .btn {
+  flex-shrink: 0;
+  border-color: var(--cc-alert-error-text);
+  color: var(--cc-alert-error-text);
+}
+
+.banner .btn:not(:disabled):hover {
+  background: var(--cc-alert-error-text);
+  border-color: var(--cc-alert-error-text);
+  color: var(--cc-alert-error-bg);
 }
 
 /* "CodeCarbon 0.2.0 is available — Install": informative, not alarming. */
 .update-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 12px;
-  border-radius: var(--radius);
-  background: var(--accent-soft);
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
-  font-size: 13px;
+  background: var(--cc-alert-success-bg);
+  border: 1px solid var(--cc-alert-success-border);
+  color: var(--cc-alert-success-text);
+}
+
+.update-banner .btn {
+  flex-shrink: 0;
+  border-color: var(--cc-ink);
 }
 
 .update-body {
@@ -442,23 +705,26 @@ body {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.update-text {
-  font-weight: 600;
 }
 
 .update-note {
-  color: var(--muted);
+  font-weight: 400;
 }
 
 .update-note.error {
-  color: var(--danger);
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
 }
 
-.update-banner .btn {
-  flex-shrink: 0;
+/* A notice (e.g. "Keeping a history is turned off"): the warning alert. */
+.notice {
+  margin: 0;
+  justify-content: flex-start;
+  background: var(--cc-alert-warning-bg);
+  border: 1px solid var(--cc-alert-warning-border);
+  color: var(--cc-alert-warning-text);
 }
 
 .hint {
@@ -466,11 +732,11 @@ body {
   align-items: center;
   gap: 8px;
   justify-content: center;
-  color: var(--muted);
+  color: var(--cc-text-2);
 }
 
 .muted {
-  color: var(--muted);
+  color: var(--cc-text-2);
 }
 
 .small {
@@ -479,14 +745,41 @@ body {
 
 /* ---- Details blocks ----------------------------------------------------- */
 
-.details summary {
+.details > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   cursor: pointer;
-  font-weight: 600;
-  list-style-position: inside;
+  list-style: none;
+}
+
+.details > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* A square-cut lime triangle, pointing down when open. */
+.details > summary::before {
+  content: "";
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: 7px solid var(--cc-marker);
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  transition: transform 0.15s;
+}
+
+.details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.details > summary:focus-visible {
+  outline: 2px solid var(--cc-focus);
+  outline-offset: 2px;
 }
 
 .details-body {
-  margin-top: 8px;
+  margin-top: 10px;
   font-size: 13px;
 }
 
@@ -499,24 +792,32 @@ body {
   padding-left: 18px;
 }
 
+.details-body li {
+  margin-bottom: 4px;
+}
+
+.details-body li::marker {
+  color: var(--cc-marker);
+}
+
 .notes li {
-  color: var(--muted);
+  color: var(--cc-text-2);
 }
 
 .badge {
   display: inline-block;
   font-size: 10.5px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
+  border-radius: var(--cc-radius);
+  background: var(--cc-lime);
+  color: var(--cc-ink);
   vertical-align: middle;
 }
 
-/* ---- Forms -------------------------------------------------------------- */
+/* ---- Forms (UI Kit Platform "Input") -------------------------------------- */
 
 .settings-form {
   display: flex;
@@ -524,10 +825,14 @@ body {
   gap: 12px;
 }
 
+/* Block, not flex: WebKitGTK keeps a floated legend on the border of a
+   flex fieldset. */
 fieldset.card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: block;
+}
+
+fieldset.card > :not(legend) + * {
+  margin-top: 12px;
 }
 
 /* A legend floated inside the card instead of sitting on its border. */
@@ -535,7 +840,7 @@ legend.card-title {
   float: left;
   width: 100%;
   padding: 0;
-  font-weight: 600;
+  margin-bottom: 12px;
 }
 
 legend.card-title + * {
@@ -545,43 +850,94 @@ legend.card-title + * {
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .field label {
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 400;
 }
 
 .field input:not([type="checkbox"]),
 .field select,
 .account-create input {
   font: inherit;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 7px 9px;
+  font-size: 14px;
+  color: var(--cc-input-text);
+  background-color: var(--cc-input-bg);
+  border: 1px solid transparent;
+  border-radius: var(--cc-radius);
+  height: 40px;
+  padding: 4px 12px;
   width: 100%;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.field input::placeholder,
+.account-create input::placeholder {
+  color: var(--cc-placeholder);
+  opacity: 1;
+}
+
+.field input:not([type="checkbox"]):not(:disabled):hover,
+.field select:not(:disabled):hover,
+.account-create input:not(:disabled):hover,
+.field input:not([type="checkbox"]):focus,
+.field select:focus,
+.account-create input:focus {
+  background-color: var(--cc-input-bg-hover);
+  border-color: var(--cc-input-border-focus);
+  outline: none;
 }
 
 .field input:focus-visible,
 .field select:focus-visible,
 .account-create input:focus-visible,
 .btn:focus-visible,
-.tab:focus-visible,
 .link:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: 2px solid var(--cc-focus);
+  outline-offset: 2px;
+}
+
+.field input:not([type="checkbox"]):disabled,
+.field select:disabled,
+.account-create input:disabled {
+  background-color: var(--cc-input-disabled-bg);
+  color: var(--cc-gray);
+  cursor: default;
+}
+
+.field:has(:disabled) > label {
+  color: var(--cc-gray);
+}
+
+.field select {
+  min-width: 0;
+  appearance: none;
+  padding-right: 34px;
+  background-image: var(--cc-select-arrow);
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 10px 6px;
+  cursor: pointer;
+}
+
+.field select option {
+  background: var(--cc-bg);
+  color: var(--cc-text);
 }
 
 .field-help {
-  color: var(--muted);
+  color: var(--cc-text-2);
   font-size: 12px;
 }
 
 .field-error {
-  color: var(--danger);
+  color: var(--cc-danger-text);
   font-size: 12px;
+  font-weight: 700;
 }
 
 .field-error:empty {
@@ -589,7 +945,7 @@ legend.card-title + * {
 }
 
 .has-error input {
-  border-color: var(--danger) !important;
+  border-color: var(--cc-danger-text) !important;
 }
 
 .field-toggle {
@@ -597,26 +953,28 @@ legend.card-title + * {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 4px 12px;
 }
 
 .field-toggle label {
   display: flex;
   flex-direction: column;
   flex: 1;
+  gap: 2px;
 }
 
 .field-toggle label small {
-  color: var(--muted);
-  font-weight: 400;
+  color: var(--cc-text-2);
+  font-size: 12px;
 }
 
-/* A checkbox styled as a switch. */
+/* A checkbox styled as a switch: lime track when on, square knob. */
 input[type="checkbox"][role="switch"] {
   appearance: none;
   width: 38px;
   height: 22px;
-  border-radius: 999px;
-  background: var(--border);
+  border-radius: var(--cc-radius);
+  background: var(--cc-switch-off);
   position: relative;
   cursor: pointer;
   flex: none;
@@ -631,18 +989,30 @@ input[type="checkbox"][role="switch"]::after {
   left: 3px;
   width: 16px;
   height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-  transition: transform 0.15s;
+  border-radius: 1px;
+  background: var(--cc-white);
+  transition:
+    transform 0.15s,
+    background 0.15s;
 }
 
 input[type="checkbox"][role="switch"]:checked {
-  background: var(--accent);
+  background: var(--cc-lime);
 }
 
 input[type="checkbox"][role="switch"]:checked::after {
   transform: translateX(16px);
+  background: var(--cc-ink);
+}
+
+input[type="checkbox"][role="switch"]:focus-visible {
+  outline: 2px solid var(--cc-focus);
+  outline-offset: 2px;
+}
+
+input[type="checkbox"][role="switch"]:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .form-actions {
@@ -656,11 +1026,12 @@ input[type="checkbox"][role="switch"]:checked::after {
   margin: 0;
   flex: 1;
   font-size: 12.5px;
-  color: var(--accent);
+  font-weight: 700;
+  color: var(--cc-accent-text);
 }
 
 .form-message.error {
-  color: var(--danger);
+  color: var(--cc-danger-text);
 }
 
 .form-message:empty {
@@ -669,27 +1040,15 @@ input[type="checkbox"][role="switch"]:checked::after {
 
 /* ---- CodeCarbon dashboard account -------------------------------------- */
 
-.field select {
-  min-width: 0;
-  appearance: auto;
-}
-
-.field select:disabled,
-.account-create input:disabled {
-  opacity: 0.6;
-}
-
 .account {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  gap: 12px;
+  border-color: var(--cc-lime-hover);
 }
 
 .account .card-title {
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
 }
 
 .account-block {
@@ -754,7 +1113,7 @@ input[type="checkbox"][role="switch"]:checked::after {
 }
 
 .account-target b {
-  color: var(--text);
+  color: var(--cc-text);
   overflow-wrap: anywhere;
 }
 
@@ -763,34 +1122,38 @@ input[type="checkbox"][role="switch"]:checked::after {
 }
 
 .account-advanced {
-  border-top: 1px solid var(--border);
-  padding-top: 10px;
+  border-top: 1px solid var(--cc-border);
+  padding-top: 12px;
 }
 
 .account-advanced .details-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
-.link:disabled {
-  color: var(--muted);
-  cursor: default;
-  text-decoration: none;
-}
-
+/* "☁ Uploading to …": a quiet outlined tag. */
 .upload-chip {
   align-self: center;
   margin: -4px 0 0;
   padding: 3px 10px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius);
+  color: var(--cc-text-2);
   font-size: 12px;
   max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.upload-chip > span[aria-hidden] {
+  color: var(--cc-accent-text);
+}
+
+.upload-chip b {
+  color: var(--cc-text);
+  font-weight: 500;
 }
 
 /* ---- History ------------------------------------------------------------ */
@@ -801,21 +1164,26 @@ input[type="checkbox"][role="switch"]:checked::after {
 }
 
 .tiles-3 .tile {
-  padding: 10px 10px 8px;
-  /* Labels may take two lines ("Depuis le début" at 340 px): the label
-     grows so the values of the three tiles stay on one line. */
-  display: flex;
-  flex-direction: column;
+  padding: 10px 8px 8px;
+}
+
+/* Shrinks with the panel so a small total ("0,00307 g", 9 monospace
+   characters) still fits a third of a 340 px panel instead of being cut
+   off. */
+.tiles-3 .tile-value {
+  font-size: clamp(12.5px, 6vw - 6px, 20px);
+  letter-spacing: -0.04em;
 }
 
 .tiles-3 .tile-label {
-  flex: 1 0 auto;
+  font-size: 11.5px;
+  letter-spacing: 0;
 }
 
-/* Shrinks with the panel so a small total ("0,00307 g", about 5.5 em)
-   still fits a third of a 340 px panel instead of being cut off. */
-.tiles-3 .tile-value {
-  font-size: clamp(13px, 5vw - 3.5px, 20px);
+/* "27 h 14 min" fits a third of a 340 px panel. */
+.tiles-3 .tile-sub {
+  font-size: 11px;
+  letter-spacing: -0.03em;
 }
 
 .bars {
@@ -830,30 +1198,31 @@ input[type="checkbox"][role="switch"]:checked::after {
 }
 
 .bar-fill {
-  fill: color-mix(in srgb, var(--accent) 70%, transparent);
+  fill: var(--cc-bar);
 }
 
 .bar.today .bar-fill,
 .bar:hover .bar-fill {
-  fill: var(--accent);
+  fill: var(--cc-bar-today);
 }
 
 .bar:hover .bar-hit {
-  fill: var(--accent-soft);
+  fill: var(--cc-surface);
 }
 
-.bars-axis,
-.bars-tick {
-  stroke: var(--border);
+.bars-axis {
+  stroke: var(--cc-chart-axis);
   stroke-width: 1;
 }
 
 .bars-tick {
-  stroke: var(--muted);
+  stroke: var(--cc-chart-axis);
+  stroke-width: 1;
 }
 
 .bars-label {
-  fill: var(--muted);
+  fill: var(--cc-chart-label);
+  font-family: var(--cc-font);
   font-size: 9px;
 }
 
@@ -868,52 +1237,72 @@ input[type="checkbox"][role="switch"]:checked::after {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .equivalents li {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  font-size: 13px;
+}
+
+/* Brand pixel icons (lime on transparent), in a fixed square slot; the
+   image keeps its own aspect ratio (the truck is wider than tall). On the
+   light scheme the slot is a dark block, so the lime stays legible. */
+.eq-icon {
+  flex: none;
+  display: block;
+  width: 36px;
+  height: 36px;
+  padding: 4px;
+  border-radius: var(--cc-radius);
+  background: var(--cc-icon-slot);
+  object-fit: contain;
+}
+
+/* The two equivalents without a brand pixel icon: a stroke icon, cut square. */
+svg.eq-icon {
+  padding: 6px;
+  fill: none;
+  stroke: var(--cc-lime);
+  stroke-width: 1.75;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+}
+
+/* "12.3" in "≈ 12.3 km by car": the number in the Data font. */
+.eq-value {
+  font-family: var(--cc-font-data);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--cc-kpi);
   font-variant-numeric: tabular-nums;
 }
 
-.eq-icon {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  padding: 3px;
-  border-radius: 6px;
-  background: var(--accent-soft);
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 .eq-note {
-  margin: 10px 0 0;
+  margin: 12px 0 0;
 }
 
 .sessions {
   list-style: none;
-  margin: 0;
+  margin: 0 -14px;
   padding: 0;
 }
 
+/* List rows (UI Kit Platform "Projects"). */
 .sessions li {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  padding: 7px 0;
-  border-top: 1px solid var(--border);
+  padding: 10px 14px;
+  border-top: 1px solid var(--cc-border);
+  transition: background 0.1s;
 }
 
-.sessions li:first-child {
-  border-top: 0;
-  padding-top: 2px;
+.sessions li:hover {
+  background: var(--cc-surface);
 }
 
 .session-main {
@@ -932,23 +1321,39 @@ input[type="checkbox"][role="switch"]:checked::after {
 
 .session-co2 {
   flex: none;
-  font-weight: 600;
+  font-family: var(--cc-font-data);
+  font-weight: 500;
+  color: var(--cc-kpi);
   font-variant-numeric: tabular-nums;
 }
 
 .sessions + .more {
   width: 100%;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
   text-align: center;
-  color: var(--muted);
+  color: var(--cc-text-2);
   padding: 28px 18px;
 }
 
 .empty-state p {
   margin: 0;
+}
+
+.empty-icon {
+  display: block;
+  width: 48px;
+  height: 48px;
+  padding: 6px;
+  border-radius: var(--cc-radius);
+  background: var(--cc-icon-slot);
+  object-fit: contain;
 }
 
 .history-footer {
@@ -960,15 +1365,6 @@ input[type="checkbox"][role="switch"]:checked::after {
   font-size: 12px;
 }
 
-.summary-equivalent {
-  margin: 8px 0 0;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-  color: var(--accent);
-  font-weight: 500;
-  text-align: center;
-}
-
 /* ---- About -------------------------------------------------------------- */
 
 .about-head {
@@ -977,13 +1373,24 @@ input[type="checkbox"][role="switch"]:checked::after {
   gap: 14px;
 }
 
+.about-head img {
+  border-radius: var(--cc-radius);
+}
+
 .about-head h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .about-head p {
   margin: 2px 0 0;
+}
+
+.about .summary-grid dd {
+  font-size: 13px;
 }
 
 .links {
@@ -992,10 +1399,18 @@ input[type="checkbox"][role="switch"]:checked::after {
 }
 
 .links li {
-  margin: 2px 0;
+  margin: 4px 0;
+}
+
+.links li::marker {
+  color: var(--cc-marker);
+}
+
+.about-updates .card-head {
+  align-items: center;
 }
 
 .about-updates .update-line {
-  margin: 6px 0 0;
+  margin: 0;
   overflow-wrap: anywhere;
 }

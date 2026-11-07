@@ -14,8 +14,9 @@ import {
   type Totals,
 } from "../api";
 import { barChart } from "../barchart";
-import { h, setText, show, svg } from "../dom";
-import { describe as describeEquivalent, ICONS } from "../equivalents";
+import { equivalentIcon, HOUSE_URL } from "../brand";
+import { h, setQuantity, setText, show, svg } from "../dom";
+import { describe as describeEquivalent, numberParts } from "../equivalents";
 import * as fmt from "../format";
 import { live, liveAttr, n, t, type MessageKey } from "../i18n/i18n";
 
@@ -42,7 +43,7 @@ function statTile(label: MessageKey): { root: HTMLElement; update: (t: Totals) =
   return {
     root,
     update(totals) {
-      setText(value, fmt.co2(totals.emissions_kg));
+      setQuantity(value, fmt.co2(totals.emissions_kg));
       setText(energy, fmt.energy(totals.energy_kwh));
       const sessions = n("history.sessions", totals.sessions);
       setText(
@@ -54,12 +55,6 @@ function statTile(label: MessageKey): { root: HTMLElement; update: (t: Totals) =
   };
 }
 
-function icon(key: string): SVGSVGElement {
-  const el = svg("svg", { class: "eq-icon", viewBox: "0 0 20 20", "aria-hidden": "true" });
-  el.append(svg("path", { d: ICONS[key] ?? "" }));
-  return el;
-}
-
 export class HistoryView {
   readonly root: HTMLElement;
 
@@ -69,10 +64,11 @@ export class HistoryView {
   private loadSeq = 0;
 
   private readonly error = h("div", { class: "banner", role: "alert" });
-  private readonly csvOff = h("p", { class: "hint small" }, live("history.csv_off"));
+  private readonly csvOff = h("p", { class: "notice", role: "note" }, live("history.csv_off"));
   private readonly empty = h(
     "div",
     { class: "card empty-state" },
+    h("img", { class: "empty-icon", src: HOUSE_URL, alt: "", "aria-hidden": "true" }),
     h("p", {}, live("history.empty")),
   );
   private readonly body: HTMLElement;
@@ -222,7 +218,16 @@ export class HistoryView {
     this.equivalents.replaceChildren(
       ...data.equivalents_all_time.flatMap((eq) => {
         const text = describeEquivalent(eq);
-        return text ? [h("li", {}, icon(eq.key), h("span", {}, text))] : [];
+        if (!text) return [];
+        const [before, value, after] = numberParts(text);
+        return [
+          h(
+            "li",
+            {},
+            equivalentIcon(eq.key),
+            h("span", {}, before, h("span", { class: "eq-value" }, value), after),
+          ),
+        ];
       }),
     );
     this.renderSessions();

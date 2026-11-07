@@ -205,3 +205,13 @@ export function durationShort(seconds: number): string {
   if (h === 0) return t("duration.minutes", { value: m });
   return m === 0 ? t("duration.hours", { value: h }) : t("duration.hours_minutes", { h, m });
 }
+
+/**
+ * "23.4 W" → ["23.4", " W"]: a quantity and its unit (with the space
+ * before it), so a KPI can draw them in two styles. Text without a unit
+ * ("00:00:11", "–") → [text, ""]. Joining both gives the text back.
+ */
+export function splitUnit(text: string): [string, string] {
+  const match = /^(.*\d)([   ][^\d]+)$/.exec(text);
+  return match ? [match[1] ?? text, match[2] ?? ""] : [text, ""];
+}
