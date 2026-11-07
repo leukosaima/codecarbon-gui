@@ -4,6 +4,13 @@ All notable changes to CodeCarbon Desktop. Versions are tagged `vX.Y.Z` and
 published as GitHub pre-releases with installers for Windows, macOS (Apple
 Silicon and Intel) and Linux.
 
+## Unreleased
+- macOS 26: the measurement engine no longer fails to start with
+  "Failed to load Python shared library … different Team IDs" (exit code
+  255). The app and its engine are now signed with the
+  `disable-library-validation` entitlement so the engine can load its
+  bundled Python.
+
 ## 0.1.7 — CodeCarbon design system
 - The panel follows the CodeCarbon design system (Figma "Code Carbon -
   Master"): dark brand header with the logo, IBM Plex Mono throughout

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Applied by the Tauri bundler to every signed binary, including the
+  `codecarbon-agent` sidecar. The sidecar is a PyInstaller one-file program:
+  at start-up it extracts Python.framework to a temp folder and dlopen()s it.
+  Under the hardened runtime, library validation then refuses that library
+  ("mapping process and mapped file (non-platform) have different Team IDs"),
+  which macOS 26 enforces for ad-hoc signed apps: the engine exits with 255.
+  This entitlement is the one PyInstaller documents for hardened-runtime apps
+  and stays valid once the app is signed with a Developer ID and notarized.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>
