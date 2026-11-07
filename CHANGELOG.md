@@ -4,12 +4,16 @@ All notable changes to CodeCarbon Desktop. Versions are tagged `vX.Y.Z` and
 published as GitHub pre-releases with installers for Windows, macOS (Apple
 Silicon and Intel) and Linux.
 
-## Unreleased
+## 0.1.8 — macOS engine fix
 - macOS 26: the measurement engine no longer fails to start with
   "Failed to load Python shared library … different Team IDs" (exit code
   255). The app and its engine are now signed with the
   `disable-library-validation` entitlement so the engine can load its
   bundled Python.
+- CI and releases check that the app and its engine carry that
+  entitlement (GitHub's macOS runners do not enforce library validation).
+- Numbers can use the design system's Disket Mono when its files are
+  placed locally; the font is not redistributed (its licence forbids it).
 
 ## 0.1.7 — CodeCarbon design system
 - The panel follows the CodeCarbon design system (Figma "Code Carbon -
