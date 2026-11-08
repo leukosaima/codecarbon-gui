@@ -16,6 +16,7 @@ import {
   power,
   round3,
   sig3,
+  showGenericTdpWarning,
   statusLine,
 } from "./format";
 
@@ -118,6 +119,40 @@ describe("statusLine", () => {
   });
   it("passes unknown methods through", () => {
     expect(cpuMethod(hw({ cpu_method: "something_new" }))).toBe("something_new");
+  });
+});
+
+describe("showGenericTdpWarning", () => {
+  it("warns when a generic TDP is used for estimation", () => {
+    expect(showGenericTdpWarning(hw({ cpu_method: "cpu_load", cpu_tdp_is_generic: true }))).toBe(
+      true,
+    );
+    expect(showGenericTdpWarning(hw({ cpu_method: "constant", cpu_tdp_is_generic: true }))).toBe(
+      true,
+    );
+  });
+
+  it("does not warn when the TDP is known", () => {
+    expect(showGenericTdpWarning(hw({ cpu_method: "cpu_load", cpu_tdp_is_generic: false }))).toBe(
+      false,
+    );
+  });
+
+  it("does not warn for hardware measurement backends", () => {
+    // CodeCarbon marks these as generic because it skips the TDP lookup, but
+    // the actual power is measured, so the TDP value is not used.
+    expect(showGenericTdpWarning(hw({ cpu_method: "windows_emi", cpu_tdp_is_generic: true }))).toBe(
+      false,
+    );
+    expect(showGenericTdpWarning(hw({ cpu_method: "intel_rapl", cpu_tdp_is_generic: true }))).toBe(
+      false,
+    );
+    expect(
+      showGenericTdpWarning(hw({ cpu_method: "intel_power_gadget", cpu_tdp_is_generic: true })),
+    ).toBe(false);
+    expect(
+      showGenericTdpWarning(hw({ cpu_method: "apple_powermetrics", cpu_tdp_is_generic: true })),
+    ).toBe(false);
   });
 });
 

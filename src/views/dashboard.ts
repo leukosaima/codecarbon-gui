@@ -21,7 +21,7 @@ import { uploadChip } from "../account";
 import { equivalentIcon } from "../brand";
 import { h, setQuantity, setText, show, spinner, svg } from "../dom";
 import * as fmt from "../format";
-import { cpuMethod, statusLine } from "../format";
+import { cpuMethod, showGenericTdpWarning, statusLine } from "../format";
 import { best, describe as describeEquivalent, numberParts } from "../equivalents";
 import { getLocale, live, liveAttr, n, t, tNodes, type Locale, type MessageKey } from "../i18n/i18n";
 import { sparkline, WINDOW_SECS } from "../sparkline";
@@ -496,7 +496,7 @@ export class DashboardView {
           `${cpu || t("details.unknown_model")} — ${cpuMethod(hw)}`,
         ),
       );
-      if (hw.cpu_tdp_is_generic) {
+      if (showGenericTdpWarning(hw)) {
         items.push(h("li", {}, t("details.generic_tdp")));
       }
       if (hw.gpu_count && hw.gpu_count > 0) {

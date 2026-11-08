@@ -82,12 +82,25 @@ export function decimal(x: number, decimals: number, locale: string = intlLocale
 }
 
 /** Tools named in "measured (…)"; not translated. */
-const MEASURED_BY: Record<string, string> = {
+export const MEASURED_BY: Record<string, string> = {
   intel_rapl: "Intel RAPL",
   windows_emi: "Windows EMI",
   intel_power_gadget: "Intel Power Gadget",
   apple_powermetrics: "powermetrics",
 };
+
+/** Whether the generic-TDP warning applies to this hardware setup.
+ *
+ * CodeCarbon's hardware measurement backends (RAPL, Windows EMI, etc.) do not
+ * look up the CPU TDP, so they always report `cpu_tdp_is_generic=true` even
+ * when the model is in the database. Since the TDP isn't actually used for
+ * measured methods, the warning would be misleading.
+ */
+export function showGenericTdpWarning(hw: Hardware): boolean {
+  if (!hw.cpu_tdp_is_generic) return false;
+  if (hw.cpu_method && MEASURED_BY[hw.cpu_method]) return false;
+  return true;
+}
 
 /** How CodeCarbon obtains the CPU power, in plain words. */
 export function cpuMethod(hw: Hardware): string {
